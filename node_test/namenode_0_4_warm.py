@@ -1,4 +1,5 @@
 import sys
+import math # 新增 math 导入
 
 sys.path.append("../..")
 sys.path.append("..")
@@ -58,7 +59,7 @@ class AdapCPNameNode:
         self.allreduce_namenode = AllReduceNameNode(namenode)
         self.scheduler = PipelineScheduler(datanode_num, total_length)
         self.allreduce_scheduler = AllReduceScheduler(datanode_num)
-        self.offloading_partitioner = OffloadingPartitioner() # ILP 2 split_layer; 3 timing
+        self.offloading_partitioner = OffloadingPartitioner() 
         self.ddpg_partitioner = AdaptivePartitioner(datanode_num, state_dim = 12, use_dirichlet=True)
         self.current_split_layer = None
         self.current_ratios = None
@@ -67,15 +68,51 @@ class AdapCPNameNode:
 
         self._init_offloading_partitioner()
 
-    def _init_offloading_partitioner(self):
-        """初始化OffloadingPartitioner，添加VGG13各层信息"""
-        maxpool_layers = [3, 6, 9, 12, 15]
+    # def _init_offloading_partitioner(self):
+    #     """初始化OffloadingPartitioner，添加VGG13各层信息"""
+    #     maxpool_layers = [3, 6, 9, 12, 15]
 
-        for layer_id in range(1, 16):
+    #     for layer_id in range(1, 16):
+    #         is_maxpool = layer_id in maxpool_layers
+    #         flops = calculate_layer_flops_vgg13(layer_id)
+    #         output_size = calculate_output_size_vgg13(layer_id)
+
+    #         if layer_id <= 3:
+    #             c_in, c_out = 3, 64
+    #             h, w = 224, 224
+    #         elif layer_id <= 6:
+    #             c_in, c_out = 64, 128
+    #             h, w = 112, 112
+    #         elif layer_id <= 9:
+    #             c_in, c_out = 128, 256
+    #             h, w = 56, 56
+    #         elif layer_id <= 12:
+    #             c_in, c_out = 256, 512
+    #             h, w = 28, 28
+    #         else:
+    #             c_in, c_out = 512, 512
+    #             h, w = 14, 14
+
+    #         self.offloading_partitioner.add_layer(
+    #             layer_id, flops, output_size, is_maxpool, False, c_in, c_out, h, w
+    #         )
+
+    def _init_offloading_partitioner(self):
+        """初始化OffloadingPartitioner，添加VGG13各层信息（现已包含全连接层）"""
+        maxpool_layers = [3, 6, 9, 12, 15]
+        
+        # 获取模型的实际总层数 (VGG13通常为18: 15个特征提取层 + 3个FC层)
+        # 如果 self.total_length 没有在这里定义，可直接用 range(1, 19)
+        total_layers_to_profile = total_length if total_length > 0 else 18 
+
+        for layer_id in range(1, total_layers_to_profile + 1):
             is_maxpool = layer_id in maxpool_layers
+            is_fc = layer_id > 15  # 大于15的认为是全连接层
+            
             flops = calculate_layer_flops_vgg13(layer_id)
             output_size = calculate_output_size_vgg13(layer_id)
 
+            # 确定通道数和特征图大小
             if layer_id <= 3:
                 c_in, c_out = 3, 64
                 h, w = 224, 224
@@ -88,15 +125,24 @@ class AdapCPNameNode:
             elif layer_id <= 12:
                 c_in, c_out = 256, 512
                 h, w = 28, 28
-            else:
+            elif layer_id <= 15:
                 c_in, c_out = 512, 512
                 h, w = 14, 14
+            else:
+                # 全连接层特征映射
+                if layer_id == 16:
+                    c_in, c_out = 512 * 7 * 7, 4096
+                elif layer_id == 17:
+                    c_in, c_out = 4096, 4096
+                else:
+                    c_in, c_out = 4096, 1000
+                h, w = 1, 1 # FC层不具备二维空间属性，设为1
 
             self.offloading_partitioner.add_layer(
-                layer_id, flops, output_size, is_maxpool, False, c_in, c_out, h, w
+                layer_id, flops, output_size, is_maxpool, is_fc, c_in, c_out, h, w
             )
 
-    def compute_offloading_point(self): # ILP 1 split_layer
+    def compute_offloading_point(self):
         """第一步：ILP决策Device vs Edge Cluster的卸载点"""
         self.current_split_layer = self.offloading_partitioner.solve_offloading_point(
             device_power, edge_cluster_power, bandwidth, min_local_layers=3
@@ -115,19 +161,15 @@ class AdapCPNameNode:
         if self.current_ratios is None:
             raise ValueError("DDPG ratios not computed")
 
-        # --- 修复代码：确保每个比例至少能分到1个通道 ---
         min_ratio = 1.0 / c_out
         adjusted_ratios = np.maximum(self.current_ratios, min_ratio)
-        adjusted_ratios = adjusted_ratios / adjusted_ratios.sum() # 重新归一化
-        # --------------------------------------------
+        adjusted_ratios = adjusted_ratios / adjusted_ratios.sum() 
 
         boundaries = [0]
-        # 修复1：遍历所有比例，不要切片砍掉！
         for r in self.current_ratios:
             next_bound = int(boundaries[-1] + c_out * r)
             boundaries.append(next_bound)
         
-        # 修复2：最后强制等于总通道数，保证不越界（不覆盖中间值）
         boundaries[-1] = c_out
         
         self.current_boundaries = boundaries
@@ -159,22 +201,12 @@ class AdapCPNameNode:
         return output
 
     def run_allreduce_inference(self, input_tensor):
-        """
-        执行边缘AllReduce推理（Filter Splitting模式）
-
-        流程：
-        1. 广播输入给所有DataNode
-        2. 收集各节点切片
-        3. 合并后广播给所有节点
-        4. 重复直到所有层完成
-        """
         edge_start, edge_end = self.get_edge_layers()
         if edge_start > edge_end:
             return input_tensor
 
         print(f"\n===== AllReduce边缘推理: Layers {edge_start}-{edge_end} =====")
 
-        # -------------------动态计算 boundaries 的代码---------------------------
         current_input = input_tensor
         layer_groups = self._get_layer_groups(edge_start, edge_end)
 
@@ -183,18 +215,14 @@ class AdapCPNameNode:
         for group_idx, (start_l, end_l) in enumerate(layer_groups):
             print(f"\n--- Layer Group {group_idx + 1}: Layers {start_l}-{end_l} ---")
 
-            # 【新增修复】: 动态获取当前组的输出通道数 (layer_id 从 1 开始，所以索引是 -1)
             current_group_c_out = c_out_list[start_l - 1]
             
-            # 重新计算本组的分割边界
             boundaries = self.compute_filter_boundaries(current_group_c_out)
             print(f"当前组 (目标通道数 {current_group_c_out}) Filter 分割边界: {boundaries}")
 
-            # 广播时带上正确的 boundaries
             self.allreduce_namenode.broadcast_input_to_all(
                 current_input, start_l, end_l, boundaries
             )
-            # -------------------动态计算 boundaries 的代码---------------------------
 
             slices = {}
             for _ in range(datanode_num):
@@ -203,22 +231,18 @@ class AdapCPNameNode:
                 )
                 slices[node_id] = tensor_slice
 
-            # 过滤掉通道数 (dim=1) 为 0 的无效 dummy tensor (即尺寸为 [1, 0, 1, 1] 的切片)
             sorted_slices = []
             for i in range(datanode_num):
                 t = slices[i]
-                if t.size(1) > 0:  # 只有包含实际数据的切片才参与拼接
+                if t.size(1) > 0:  
                     sorted_slices.append(t)
             
-            # 安全拼接
             if len(sorted_slices) > 0:
                 merged = torch.cat(sorted_slices, dim=1)
             else:
-                # 极端情况防崩溃：如果所有节点都没数据（理论上不会发生）
                 merged = torch.zeros(1, 0, 1, 1)
 
             print(f"合并后尺寸: {merged.size()}")
-            # --------------------------------------------------------------------------
 
             next_layer_id = layer_groups[group_idx + 1][0] if group_idx + 1 < len(layer_groups) else 0
 
@@ -230,13 +254,11 @@ class AdapCPNameNode:
         return current_input
 
     def _get_layer_groups(self, start_layer, end_layer):
-        """将连续的层分成多个组（按池化层和全连接层分割）"""
         groups = []
         pool_layers = VGG13_POOL_LAYERS
 
         current_start = start_layer
         for layer_id in range(start_layer, end_layer + 1):
-            # 新增: layer_id > 15 (即全连接层) 强制作为切分点，逐层 AllReduce 同步
             if (layer_id in pool_layers or layer_id > 15) and layer_id < end_layer:
                 groups.append((current_start, layer_id))
                 current_start = layer_id + 1
@@ -247,7 +269,6 @@ class AdapCPNameNode:
         return groups
 
     def compute_fc_layers(self, input_tensor):
-        """计算全连接层"""
         print("\n===== Computing FC Layers =====")
         for layer_id in range(conv_length + 1, total_length + 1):
             fc_start = time.time()
@@ -257,20 +278,22 @@ class AdapCPNameNode:
         return input_tensor
 
     def record_inference_result(self, latency):
-        """记录推理结果用于DDPG训练"""
-        self.ddpg_partitioner.record_experience(latency)
+        """
+        【关键修复】 记录推理结果用于DDPG训练。
+        论文强化学习目标是最小化延迟，即最大化收益。
+        因此通过取对数及负号的方式，将 Latency 映射为 Reward。
+        """
+        # 常数 C (例如10.0) 根据网络规模进行微调以保持 reward 尺度适当
+        C = 10.0
+        # 确保 latency > 0 防止对数异常
+        latency_safe = max(latency, 1e-5) 
+        reward = C - math.log(latency_safe) 
+        
+        self.ddpg_partitioner.record_experience(reward)
+        print(f"[DRL更新] 记录执行延迟: {latency:.3f}s -> 映射为 Reward: {reward:.3f}")
 
 
 def run_adapcp_inference(namenode, adapcp_namenode, round_idx):
-    """
-    AdapCP完整推理流程
-
-    Step 1: ILP决策卸载点 (Device vs Edge Cluster)
-    Step 2: 本地执行前段 (layer 1 到 split_layer)
-    Step 3: DDPG决策并行比例 (Filter Splitting)
-    Step 4: AllReduce边缘并行计算
-    Step 5: 执行FC层
-    """
     global transfer_time, thread_start_time, thread_end_time, thread_time
 
     print(f"\n{'='*60}")
@@ -285,7 +308,6 @@ def run_adapcp_inference(namenode, adapcp_namenode, round_idx):
     input_tensor = torch.rand(1, 3, width, width)
     round_start_time = time.time()
 
-    # --------------------------------层分割算法 ILP---------------------------------------
     split_layer = adapcp_namenode.compute_offloading_point()
     plan = adapcp_namenode.offloading_partitioner.get_offloading_plan(split_layer)
     timing = adapcp_namenode.offloading_partitioner.estimate_pipeline_times(
@@ -293,33 +315,23 @@ def run_adapcp_inference(namenode, adapcp_namenode, round_idx):
     )
     print(f"\n[ILP决策] {plan['description']}")
     print(f"[时间估算] 本地: {timing['local_time']:.3f}s, 传输: {timing['transfer_time']:.3f}s, 边缘: {timing['edge_time']:.3f}s")
-    # --------------------------------层分割算法 ILP---------------------------------------
 
-    # --------------------------------层内分割算法 DDPG---------------------------------------
+    # 训练回合加上探索因子 epsilon, 让 DDPG 可以借助 Dirichlet+OU Noise 进行搜索
+    epsilon_val = 0.5 if round_idx <= WARM_UP_ROUNDS else 0.0
     ratios = adapcp_namenode.compute_ddpg_ratios(
         [(c, 0.01) for c in computing_power],
         network_state,
-        epsilon=0.0
+        epsilon=epsilon_val
     )
-    print(f"\n[DDPG决策] 分割比例: {[f'{r:.3f}' for r in ratios]}")
-    # --------------------------------层内分割算法 DDPG---------------------------------------
+    print(f"\n[DDPG决策] 分割比例: {[f'{r:.3f}' for r in ratios]} (Epsilon: {epsilon_val})")
 
     c_out_for_boundaries = c_out_list[adapcp_namenode.current_split_layer - 1] if adapcp_namenode.current_split_layer > 0 else 64
     boundaries = adapcp_namenode.compute_filter_boundaries(c_out_for_boundaries)
     print(f"[Filter边界] {boundaries}")
 
-    # --------------------------------层分割优化 All Reduce---------------------------------------
-    # --------------------------------层分割优化 All Reduce---------------------------------------
-
     local_output = adapcp_namenode.run_local_inference(input_tensor)
     edge_output = adapcp_namenode.run_allreduce_inference(local_output)
 
-    # if edge_output is not None:
-    #     final_output = adapcp_namenode.compute_fc_layers(edge_output)
-    # else:
-    #     final_output = local_output
-
-    # 边缘节点已经完成了所有的层，主节点直接使用最终输出
     final_output = edge_output if edge_output is not None else local_output
 
     round_total_time = time.time() - round_start_time
@@ -328,13 +340,13 @@ def run_adapcp_inference(namenode, adapcp_namenode, round_idx):
     print(f"\n[完成] 第 {round_idx} 轮推理")
     print(f"[统计] 总耗时: {round_total_time:.3f}s | 传输耗时: {round_total_transfer:.3f}s")
 
+    # 执行记录并转换 Reward
     adapcp_namenode.record_inference_result(round_total_time)
 
     return round_total_time
 
 
 def run_legacy_inference(namenode, adapcp_namenode, round_idx):
-    """传统流水线推理模式（保留兼容性）"""
     global transfer_time, thread_start_time, thread_end_time, thread_time
     transfer_time = []
     thread_start_time = [0] * datanode_num

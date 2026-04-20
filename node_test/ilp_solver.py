@@ -258,9 +258,37 @@ class ILPLayerPartitioner:
         return descriptions
 
 
+# def calculate_layer_flops_vgg13(layer_id, c_out_list=None):
+#     flops_map = {}
+
+#     for lid in range(1, 16):
+#         if lid <= 3:
+#             c_in, c_out = 3, 64
+#             h, w = 224, 224
+#         elif lid <= 6:
+#             c_in, c_out = 64, 128
+#             h, w = 112, 112
+#         elif lid <= 9:
+#             c_in, c_out = 128, 256
+#             h, w = 56, 56
+#         elif lid <= 12:
+#             c_in, c_out = 256, 512
+#             h, w = 28, 28
+#         elif lid <= 15:
+#             c_in, c_out = 512, 512
+#             h, w = 14, 14
+
+#         flops = 2 * h * w * c_in * c_out * 3 * 3
+#         flops_map[lid] = flops
+
+#     if layer_id in flops_map:
+#         return flops_map[layer_id]
+#     return 0
+
 def calculate_layer_flops_vgg13(layer_id, c_out_list=None):
     flops_map = {}
 
+    # 1-15层：卷积层和池化层的FLOPs计算
     for lid in range(1, 16):
         if lid <= 3:
             c_in, c_out = 3, 64
@@ -278,13 +306,21 @@ def calculate_layer_flops_vgg13(layer_id, c_out_list=None):
             c_in, c_out = 512, 512
             h, w = 14, 14
 
+        # 卷积层 FLOPs
         flops = 2 * h * w * c_in * c_out * 3 * 3
         flops_map[lid] = flops
+
+    # 新增 16-18层：全连接层的 FLOPs
+    # FC1 (Layer 16): 经过Flatten后输入为 512*7*7=25088，输出为 4096
+    flops_map[16] = 2 * (512 * 7 * 7) * 4096
+    # FC2 (Layer 17): 输入 4096，输出 4096
+    flops_map[17] = 2 * 4096 * 4096
+    # FC3 (Layer 18): 输入 4096，输出 1000 (假设为ImageNet分类)
+    flops_map[18] = 2 * 4096 * 1000
 
     if layer_id in flops_map:
         return flops_map[layer_id]
     return 0
-
 
 def calculate_layer_flops_vgg16(layer_id, c_out_list=None):
     flops_map = {}
@@ -314,6 +350,26 @@ def calculate_layer_flops_vgg16(layer_id, c_out_list=None):
     return 0
 
 
+# def calculate_output_size_vgg13(layer_id):
+#     size_map = {
+#         1: 64 * 224 * 224,
+#         2: 64 * 224 * 224,
+#         3: 64 * 112 * 112,
+#         4: 128 * 112 * 112,
+#         5: 128 * 112 * 112,
+#         6: 128 * 56 * 56,
+#         7: 256 * 56 * 56,
+#         8: 256 * 56 * 56,
+#         9: 256 * 56 * 56,
+#         10: 256 * 28 * 28,
+#         11: 512 * 28 * 28,
+#         12: 512 * 28 * 28,
+#         13: 512 * 28 * 28,
+#         14: 512 * 14 * 14,
+#         15: 512 * 14 * 14,
+#     }
+#     return size_map.get(layer_id, 512 * 7 * 7)
+
 def calculate_output_size_vgg13(layer_id):
     size_map = {
         1: 64 * 224 * 224,
@@ -331,9 +387,12 @@ def calculate_output_size_vgg13(layer_id):
         13: 512 * 28 * 28,
         14: 512 * 14 * 14,
         15: 512 * 14 * 14,
+        # 新增全连接层的数据输出量 (Float32类型通常还要乘以4，但这里按照原代码逻辑保持单位一致)
+        16: 4096,
+        17: 4096,
+        18: 1000
     }
-    return size_map.get(layer_id, 512 * 7 * 7)
-
+    return size_map.get(layer_id, 1000) # 默认返回最终输出维度
 
 def calculate_output_size_vgg16(layer_id):
     size_map = {

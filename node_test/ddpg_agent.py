@@ -4,6 +4,27 @@ import torch.nn as nn
 import torch.nn.functional as F
 import random
 from collections import deque
+import copy
+
+class OUNoise:
+    """Ornstein-Uhlenbeck 过程，用于生成时间相关的平滑噪声，增强连续动作空间的探索能力"""
+    def __init__(self, action_dimension, scale=0.1, mu=0.0, theta=0.15, sigma=0.2):
+        self.action_dimension = action_dimension
+        self.scale = scale
+        self.mu = mu
+        self.theta = theta
+        self.sigma = sigma
+        self.state = np.ones(self.action_dimension) * self.mu
+        self.reset()
+
+    def reset(self):
+        self.state = np.ones(self.action_dimension) * self.mu
+
+    def noise(self):
+        x = self.state
+        dx = self.theta * (self.mu - x) + self.sigma * np.random.randn(len(x))
+        self.state = x + dx
+        return self.state * self.scale
 
 
 class ReplayBuffer:
@@ -41,7 +62,7 @@ class Actor(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, action_dim),
-            nn.Softmax(dim=-1)
+            nn.Softmax(dim=-1) # 保证输出总和为1
         )
 
     def forward(self, state):
@@ -85,14 +106,23 @@ class DDPGAgent:
         self.replay_buffer = ReplayBuffer(capacity=10000)
         self.gamma = gamma
         self.tau = tau
+        
+        # 基础 DDPG 的 OU 噪声
+        self.ou_noise = OUNoise(action_dimension=action_dim)
 
     def select_action(self, state, epsilon=0.1):
-        if random.random() < epsilon:
-            return np.random.dirichlet(np.ones(self.action_dim))
-
         state_tensor = torch.FloatTensor(state).unsqueeze(0)
         probs = self.actor(state_tensor).detach().numpy()[0]
-        action = np.random.dirichlet(probs + 0.1)
+        
+        # 加入 OU 噪声并重新归一化 (epsilon 作为噪声开关或缩放)
+        if epsilon > 0:
+            noise = self.ou_noise.noise() * epsilon
+            action = probs + noise
+            action = np.clip(action, 1e-5, 1.0)
+            action = action / action.sum()
+        else:
+            action = probs
+            
         return action
 
     def select_deterministic_action(self, state):
@@ -117,6 +147,7 @@ class DDPGAgent:
         current_q = self.critic(states, actions)
         critic_loss = F.mse_loss(current_q, target_value)
 
+        # Actor 试图最大化 Critic 评价的 Q 值，因此加负号作为 Loss
         policy_loss = -self.critic(states, self.actor(states)).mean()
 
         self.critic_optimizer.zero_grad()
@@ -182,66 +213,28 @@ class DDPGAgentDirichlet(DDPGAgent):
         self.actor_target.load_state_dict(self.actor.state_dict())
 
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr_actor)
+        self.ou_noise = OUNoise(action_dimension=n_nodes)
 
     def select_action(self, state, epsilon=0.1):
-        if random.random() < epsilon:
-            return np.random.dirichlet(np.ones(self.action_dim))
-
+        """复现论文公式 (16): mu(s_t) = Dir(theta_t) + [mu(s_t|theta) + N]"""
         state_tensor = torch.FloatTensor(state).unsqueeze(0)
+        # 获取 Actor 网络的输出基准概率
         probs = self.actor(state_tensor).detach().numpy()[0]
-        action = np.random.dirichlet(probs + 0.1)
+        
+        if epsilon > 0:
+            # 1. 结合 Dirichlet 分布特性进行采样
+            # 放大 probs 作为 Dirichlet 的 alpha 参数，以 Actor 输出为分布中心
+            alpha = probs * 10.0 + 1.0 
+            dirichlet_action = np.random.dirichlet(alpha)
+            
+            # 2. 引入 OU 噪声
+            noise = self.ou_noise.noise() * epsilon
+            
+            # 3. 融合并确保动作合法 (非负且和为1)
+            action = dirichlet_action + noise
+            action = np.clip(action, 1e-5, 1.0)
+            action = action / action.sum()
+        else:
+            action = probs / probs.sum()
+            
         return action
-
-    def update(self, batch_size=64):
-        if len(self.replay_buffer) < batch_size:
-            return
-
-        states, actions, rewards, next_states, dones = self.replay_buffer.sample(batch_size)
-
-        with torch.no_grad():
-            next_actions = self.actor_target(next_states)
-            target_q = self.critic_target(next_states, next_actions)
-            target_value = rewards + (1 - dones) * self.gamma * target_q
-
-        current_q = self.critic(states, actions)
-        critic_loss = F.mse_loss(current_q, target_value)
-
-        policy_loss = -self.critic(states, self.actor(states)).mean()
-
-        self.critic_optimizer.zero_grad()
-        critic_loss.backward()
-        self.critic_optimizer.step()
-
-        self.actor_optimizer.zero_grad()
-        policy_loss.backward()
-        self.actor_optimizer.step()
-
-        self._soft_update(self.actor_target, self.actor, self.tau)
-        self._soft_update(self.critic_target, self.critic, self.tau)
-
-
-if __name__ == "__main__":
-    state_dim = 6
-    action_dim = 3
-    agent = DDPGAgent(state_dim, action_dim)
-
-    state = np.array([0.5, 0.5, 0.5, 0.5, 0.5, 0.5])
-
-    action = agent.select_action(state, epsilon=0.0)
-    print("Selected action (Dirichlet):", action)
-    print("Action sum:", action.sum())
-
-    action = agent.select_deterministic_action(state)
-    print("Deterministic action:", action)
-    print("Action sum:", action.sum())
-
-    for i in range(100):
-        state = np.random.rand(state_dim)
-        next_state = np.random.rand(state_dim)
-        action = np.random.dirichlet(np.ones(action_dim))
-        reward = -np.random.rand()
-        done = False
-        agent.add_experience(state, action, reward, next_state, done)
-
-    agent.update(batch_size=32)
-    print("Update completed successfully")
