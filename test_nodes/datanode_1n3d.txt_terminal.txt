@@ -1,0 +1,498 @@
+----- DataNode 0 第 4 轮推理开始 -----
+[ReceiveInitial] From Master: layers 4-6, boundaries [0, 0, 0, 128], input torch.Size([1, 64, 112, 112])
+
+[Node 0] 收到任务:
+  Layers: 4-6
+  Filter: [0:0]
+  Input: torch.Size([1, 64, 112, 112])
+[Node 0] 分到的通道/神经元数为0，跳过计算
+[SendSlice] To Master: Layer 6, Node 0, size torch.Size([1, 0, 1, 1])
+[ReceiveMerged] From Master: next_layer=7, size torch.Size([1, 128, 56, 56])
+[Node 0] 收到合并结果, next_layer=7
+[ReceiveInitial] From Master: layers 7-9, boundaries [0, 0, 0, 256], input torch.Size([1, 128, 56, 56])
+
+[Node 0] 收到任务:
+  Layers: 7-9
+  Filter: [0:0]
+  Input: torch.Size([1, 128, 56, 56])
+[Node 0] 分到的通道/神经元数为0，跳过计算
+[SendSlice] To Master: Layer 9, Node 0, size torch.Size([1, 0, 1, 1])
+[ReceiveMerged] From Master: next_layer=10, size torch.Size([1, 256, 28, 28])
+[Node 0] 收到合并结果, next_layer=10
+[ReceiveInitial] From Master: layers 10-12, boundaries [0, 0, 0, 512], input torch.Size([1, 256, 28, 28])
+
+[Node 0] 收到任务:
+  Layers: 10-12
+  Filter: [0:0]
+  Input: torch.Size([1, 256, 28, 28])
+[Node 0] 分到的通道/神经元数为0，跳过计算
+[SendSlice] To Master: Layer 12, Node 0, size torch.Size([1, 0, 1, 1])
+[ReceiveMerged] From Master: next_layer=13, size torch.Size([1, 512, 14, 14])
+[Node 0] 收到合并结果, next_layer=13
+[ReceiveInitial] From Master: layers 13-15, boundaries [0, 0, 0, 512], input torch.Size([1, 512, 14, 14])
+
+[Node 0] 收到任务:
+  Layers: 13-15
+  Filter: [0:0]
+  Input: torch.Size([1, 512, 14, 14])
+[Node 0] 分到的通道/神经元数为0，跳过计算
+[SendSlice] To Master: Layer 15, Node 0, size torch.Size([1, 0, 1, 1])
+[ReceiveMerged] From Master: next_layer=16, size torch.Size([1, 512, 7, 7])
+[Node 0] 收到合并结果, next_layer=16
+[ReceiveInitial] From Master: layers 16-16, boundaries [0, 7, 12, 4096], input torch.Size([1, 512, 7, 7])
+
+[Node 0] 收到任务:
+  Layers: 16-16
+  Filter: [0:7]
+  Input: torch.Size([1, 512, 7, 7])
+  Layer 16: Linear [0:7], output torch.Size([1, 7])
+[Node 0] 计算完成: torch.Size([1, 7]), 耗时: 0.001s
+[SendSlice] To Master: Layer 16, Node 0, size torch.Size([1, 7])
+[ReceiveMerged] From Master: next_layer=17, size torch.Size([1, 4096])
+[Node 0] 收到合并结果, next_layer=17
+[ReceiveInitial] From Master: layers 17-17, boundaries [0, 7, 12, 4096], input torch.Size([1, 4096])
+
+[Node 0] 收到任务:
+  Layers: 17-17
+  Filter: [0:7]
+  Input: torch.Size([1, 4096])
+  Layer 17: Linear [0:7], output torch.Size([1, 7])
+[Node 0] 计算完成: torch.Size([1, 7]), 耗时: 0.000s
+[SendSlice] To Master: Layer 17, Node 0, size torch.Size([1, 7])
+[ReceiveMerged] From Master: next_layer=18, size torch.Size([1, 4096])
+[Node 0] 收到合并结果, next_layer=18
+[ReceiveInitial] From Master: layers 18-18, boundaries [0, 0, 0, 100], input torch.Size([1, 4096])
+
+[Node 0] 收到任务:
+  Layers: 18-18
+  Filter: [0:0]
+  Input: torch.Size([1, 4096])
+[Node 0] 分到的通道/神经元数为0，跳过计算
+[SendSlice] To Master: Layer 18, Node 0, size torch.Size([1, 0, 1, 1])
+[Node 0] 最后一层 (Layer 18) 空载完毕，本轮结束，准备迎接下一轮任务...
+
+----- DataNode 0 第 5 轮推理开始 -----
+[ReceiveInitial] From Master: layers 4-6, boundaries [0, 107, 118, 128], input torch.Size([1, 64, 112, 112])
+
+[Node 0] 收到任务:
+  Layers: 4-6
+  Filter: [0:107]
+  Input: torch.Size([1, 64, 112, 112])
+  Layer 4: Conv2d [0:107], output torch.Size([1, 107, 112, 112])
+  Layer 5: Conv2d [0:107], output torch.Size([1, 107, 112, 112])
+  Layer 6: MaxPool2d, output torch.Size([1, 107, 56, 56])
+[Node 0] 计算完成: torch.Size([1, 107, 56, 56]), 耗时: 0.230s
+[SendSlice] To Master: Layer 6, Node 0, size torch.Size([1, 107, 56, 56])
+[ReceiveMerged] From Master: next_layer=7, size torch.Size([1, 128, 56, 56])
+[Node 0] 收到合并结果, next_layer=7
+[ReceiveInitial] From Master: layers 7-9, boundaries [0, 214, 236, 256], input torch.Size([1, 128, 56, 56])
+
+[Node 0] 收到任务:
+  Layers: 7-9
+  Filter: [0:214]
+  Input: torch.Size([1, 128, 56, 56])
+  Layer 7: Conv2d [0:214], output torch.Size([1, 214, 56, 56])
+  Layer 8: Conv2d [0:214], output torch.Size([1, 214, 56, 56])
+  Layer 9: MaxPool2d, output torch.Size([1, 214, 28, 28])
+[Node 0] 计算完成: torch.Size([1, 214, 28, 28]), 耗时: 0.201s
+[SendSlice] To Master: Layer 9, Node 0, size torch.Size([1, 214, 28, 28])
+[ReceiveMerged] From Master: next_layer=10, size torch.Size([1, 256, 28, 28])
+[Node 0] 收到合并结果, next_layer=10
+[ReceiveInitial] From Master: layers 10-12, boundaries [0, 429, 473, 512], input torch.Size([1, 256, 28, 28])
+
+[Node 0] 收到任务:
+  Layers: 10-12
+  Filter: [0:429]
+  Input: torch.Size([1, 256, 28, 28])
+  Layer 10: Conv2d [0:429], output torch.Size([1, 429, 28, 28])
+  Layer 11: Conv2d [0:429], output torch.Size([1, 429, 28, 28])
+  Layer 12: MaxPool2d, output torch.Size([1, 429, 14, 14])
+[Node 0] 计算完成: torch.Size([1, 429, 14, 14]), 耗时: 0.196s
+[SendSlice] To Master: Layer 12, Node 0, size torch.Size([1, 429, 14, 14])
+[ReceiveMerged] From Master: next_layer=13, size torch.Size([1, 512, 14, 14])
+[Node 0] 收到合并结果, next_layer=13
+[ReceiveInitial] From Master: layers 13-15, boundaries [0, 429, 473, 512], input torch.Size([1, 512, 14, 14])
+
+[Node 0] 收到任务:
+  Layers: 13-15
+  Filter: [0:429]
+  Input: torch.Size([1, 512, 14, 14])
+  Layer 13: Conv2d [0:429], output torch.Size([1, 429, 14, 14])
+  Layer 14: Conv2d [0:429], output torch.Size([1, 429, 14, 14])
+  Layer 15: MaxPool2d, output torch.Size([1, 429, 7, 7])
+[Node 0] 计算完成: torch.Size([1, 429, 7, 7]), 耗时: 0.074s
+[SendSlice] To Master: Layer 15, Node 0, size torch.Size([1, 429, 7, 7])
+[ReceiveMerged] From Master: next_layer=16, size torch.Size([1, 512, 7, 7])
+[Node 0] 收到合并结果, next_layer=16
+[ReceiveInitial] From Master: layers 16-16, boundaries [0, 3438, 3791, 4096], input torch.Size([1, 512, 7, 7])
+
+[Node 0] 收到任务:
+  Layers: 16-16
+  Filter: [0:3438]
+  Input: torch.Size([1, 512, 7, 7])
+  Layer 16: Linear [0:3438], output torch.Size([1, 3438])
+[Node 0] 计算完成: torch.Size([1, 3438]), 耗时: 0.019s
+[SendSlice] To Master: Layer 16, Node 0, size torch.Size([1, 3438])
+[ReceiveMerged] From Master: next_layer=17, size torch.Size([1, 4096])
+[Node 0] 收到合并结果, next_layer=17
+[ReceiveInitial] From Master: layers 17-17, boundaries [0, 3438, 3791, 4096], input torch.Size([1, 4096])
+
+[Node 0] 收到任务:
+  Layers: 17-17
+  Filter: [0:3438]
+  Input: torch.Size([1, 4096])
+  Layer 17: Linear [0:3438], output torch.Size([1, 3438])
+[Node 0] 计算完成: torch.Size([1, 3438]), 耗时: 0.004s
+[SendSlice] To Master: Layer 17, Node 0, size torch.Size([1, 3438])
+[ReceiveMerged] From Master: next_layer=18, size torch.Size([1, 4096])
+[Node 0] 收到合并结果, next_layer=18
+[ReceiveInitial] From Master: layers 18-18, boundaries [0, 83, 91, 100], input torch.Size([1, 4096])
+
+[Node 0] 收到任务:
+  Layers: 18-18
+  Filter: [0:83]
+  Input: torch.Size([1, 4096])
+  Layer 18: Linear [0:83], output torch.Size([1, 83])
+[Node 0] 计算完成: torch.Size([1, 83]), 耗时: 0.000s
+[SendSlice] To Master: Layer 18, Node 0, size torch.Size([1, 83])
+[Node 0] 最后一层 (Layer 18) 计算完毕，本轮结束，准备迎接下一轮任务...
+
+关闭 DataNode 0 的Socket连接
+DataNode 0 AllReduce 模式已关闭
+
+----- DataNode 1 第 4 轮推理开始 -----
+[ReceiveInitial] From Master: layers 4-6, boundaries [0, 0, 0, 128], input torch.Size([1, 64, 112, 112])
+
+[Node 1] 收到任务:
+  Layers: 4-6
+  Filter: [0:0]
+  Input: torch.Size([1, 64, 112, 112])
+[Node 1] 分到的通道/神经元数为0，跳过计算
+[SendSlice] To Master: Layer 6, Node 1, size torch.Size([1, 0, 1, 1])
+[ReceiveMerged] From Master: next_layer=7, size torch.Size([1, 128, 56, 56])
+[Node 1] 收到合并结果, next_layer=7
+[ReceiveInitial] From Master: layers 7-9, boundaries [0, 0, 0, 256], input torch.Size([1, 128, 56, 56])
+
+[Node 1] 收到任务:
+  Layers: 7-9
+  Filter: [0:0]
+  Input: torch.Size([1, 128, 56, 56])
+[Node 1] 分到的通道/神经元数为0，跳过计算
+[SendSlice] To Master: Layer 9, Node 1, size torch.Size([1, 0, 1, 1])
+[ReceiveMerged] From Master: next_layer=10, size torch.Size([1, 256, 28, 28])
+[Node 1] 收到合并结果, next_layer=10
+[ReceiveInitial] From Master: layers 10-12, boundaries [0, 0, 0, 512], input torch.Size([1, 256, 28, 28])
+
+[Node 1] 收到任务:
+  Layers: 10-12
+  Filter: [0:0]
+  Input: torch.Size([1, 256, 28, 28])
+[Node 1] 分到的通道/神经元数为0，跳过计算
+[SendSlice] To Master: Layer 12, Node 1, size torch.Size([1, 0, 1, 1])
+[ReceiveMerged] From Master: next_layer=13, size torch.Size([1, 512, 14, 14])
+[Node 1] 收到合并结果, next_layer=13
+[ReceiveInitial] From Master: layers 13-15, boundaries [0, 0, 0, 512], input torch.Size([1, 512, 14, 14])
+
+[Node 1] 收到任务:
+  Layers: 13-15
+  Filter: [0:0]
+  Input: torch.Size([1, 512, 14, 14])
+[Node 1] 分到的通道/神经元数为0，跳过计算
+[SendSlice] To Master: Layer 15, Node 1, size torch.Size([1, 0, 1, 1])
+[ReceiveMerged] From Master: next_layer=16, size torch.Size([1, 512, 7, 7])
+[Node 1] 收到合并结果, next_layer=16
+[ReceiveInitial] From Master: layers 16-16, boundaries [0, 7, 12, 4096], input torch.Size([1, 512, 7, 7])
+
+[Node 1] 收到任务:
+  Layers: 16-16
+  Filter: [7:12]
+  Input: torch.Size([1, 512, 7, 7])
+  Layer 16: Linear [7:12], output torch.Size([1, 5])
+[Node 1] 计算完成: torch.Size([1, 5]), 耗时: 0.001s
+[SendSlice] To Master: Layer 16, Node 1, size torch.Size([1, 5])
+[ReceiveMerged] From Master: next_layer=17, size torch.Size([1, 4096])
+[Node 1] 收到合并结果, next_layer=17
+[ReceiveInitial] From Master: layers 17-17, boundaries [0, 7, 12, 4096], input torch.Size([1, 4096])
+
+[Node 1] 收到任务:
+  Layers: 17-17
+  Filter: [7:12]
+  Input: torch.Size([1, 4096])
+  Layer 17: Linear [7:12], output torch.Size([1, 5])
+[Node 1] 计算完成: torch.Size([1, 5]), 耗时: 0.000s
+[SendSlice] To Master: Layer 17, Node 1, size torch.Size([1, 5])
+[ReceiveMerged] From Master: next_layer=18, size torch.Size([1, 4096])
+[Node 1] 收到合并结果, next_layer=18
+[ReceiveInitial] From Master: layers 18-18, boundaries [0, 0, 0, 100], input torch.Size([1, 4096])
+
+[Node 1] 收到任务:
+  Layers: 18-18
+  Filter: [0:0]
+  Input: torch.Size([1, 4096])
+[Node 1] 分到的通道/神经元数为0，跳过计算
+[SendSlice] To Master: Layer 18, Node 1, size torch.Size([1, 0, 1, 1])
+[Node 1] 最后一层 (Layer 18) 空载完毕，本轮结束，准备迎接下一轮任务...
+
+----- DataNode 1 第 5 轮推理开始 -----
+[ReceiveInitial] From Master: layers 4-6, boundaries [0, 107, 118, 128], input torch.Size([1, 64, 112, 112])
+
+[Node 1] 收到任务:
+  Layers: 4-6
+  Filter: [107:118]
+  Input: torch.Size([1, 64, 112, 112])
+  Layer 4: Conv2d [107:118], output torch.Size([1, 11, 112, 112])
+  Layer 5: Conv2d [0:11], output torch.Size([1, 11, 112, 112])
+  Layer 6: MaxPool2d, output torch.Size([1, 11, 56, 56])
+[Node 1] 计算完成: torch.Size([1, 11, 56, 56]), 耗时: 0.036s
+[SendSlice] To Master: Layer 6, Node 1, size torch.Size([1, 11, 56, 56])
+[ReceiveMerged] From Master: next_layer=7, size torch.Size([1, 128, 56, 56])
+[Node 1] 收到合并结果, next_layer=7
+[ReceiveInitial] From Master: layers 7-9, boundaries [0, 214, 236, 256], input torch.Size([1, 128, 56, 56])
+
+[Node 1] 收到任务:
+  Layers: 7-9
+  Filter: [214:236]
+  Input: torch.Size([1, 128, 56, 56])
+  Layer 7: Conv2d [214:236], output torch.Size([1, 22, 56, 56])
+  Layer 8: Conv2d [0:22], output torch.Size([1, 22, 56, 56])
+  Layer 9: MaxPool2d, output torch.Size([1, 22, 28, 28])
+[Node 1] 计算完成: torch.Size([1, 22, 28, 28]), 耗时: 0.025s
+[SendSlice] To Master: Layer 9, Node 1, size torch.Size([1, 22, 28, 28])
+[ReceiveMerged] From Master: next_layer=10, size torch.Size([1, 256, 28, 28])
+[Node 1] 收到合并结果, next_layer=10
+[ReceiveInitial] From Master: layers 10-12, boundaries [0, 429, 473, 512], input torch.Size([1, 256, 28, 28])
+
+[Node 1] 收到任务:
+  Layers: 10-12
+  Filter: [429:473]
+  Input: torch.Size([1, 256, 28, 28])
+  Layer 10: Conv2d [429:473], output torch.Size([1, 44, 28, 28])
+  Layer 11: Conv2d [0:44], output torch.Size([1, 44, 28, 28])
+  Layer 12: MaxPool2d, output torch.Size([1, 44, 14, 14])
+[Node 1] 计算完成: torch.Size([1, 44, 14, 14]), 耗时: 0.019s
+[SendSlice] To Master: Layer 12, Node 1, size torch.Size([1, 44, 14, 14])
+[ReceiveMerged] From Master: next_layer=13, size torch.Size([1, 512, 14, 14])
+[Node 1] 收到合并结果, next_layer=13
+[ReceiveInitial] From Master: layers 13-15, boundaries [0, 429, 473, 512], input torch.Size([1, 512, 14, 14])
+
+[Node 1] 收到任务:
+  Layers: 13-15
+  Filter: [429:473]
+  Input: torch.Size([1, 512, 14, 14])
+  Layer 13: Conv2d [429:473], output torch.Size([1, 44, 14, 14])
+  Layer 14: Conv2d [0:44], output torch.Size([1, 44, 14, 14])
+  Layer 15: MaxPool2d, output torch.Size([1, 44, 7, 7])
+[Node 1] 计算完成: torch.Size([1, 44, 7, 7]), 耗时: 0.008s
+[SendSlice] To Master: Layer 15, Node 1, size torch.Size([1, 44, 7, 7])
+[ReceiveMerged] From Master: next_layer=16, size torch.Size([1, 512, 7, 7])
+[Node 1] 收到合并结果, next_layer=16
+[ReceiveInitial] From Master: layers 16-16, boundaries [0, 3438, 3791, 4096], input torch.Size([1, 512, 7, 7])
+
+[Node 1] 收到任务:
+  Layers: 16-16
+  Filter: [3438:3791]
+  Input: torch.Size([1, 512, 7, 7])
+  Layer 16: Linear [3438:3791], output torch.Size([1, 353])
+[Node 1] 计算完成: torch.Size([1, 353]), 耗时: 0.005s
+[SendSlice] To Master: Layer 16, Node 1, size torch.Size([1, 353])
+[ReceiveMerged] From Master: next_layer=17, size torch.Size([1, 4096])
+[Node 1] 收到合并结果, next_layer=17
+[ReceiveInitial] From Master: layers 17-17, boundaries [0, 3438, 3791, 4096], input torch.Size([1, 4096])
+
+[Node 1] 收到任务:
+  Layers: 17-17
+  Filter: [3438:3791]
+  Input: torch.Size([1, 4096])
+  Layer 17: Linear [3438:3791], output torch.Size([1, 353])
+[Node 1] 计算完成: torch.Size([1, 353]), 耗时: 0.001s
+[SendSlice] To Master: Layer 17, Node 1, size torch.Size([1, 353])
+[ReceiveMerged] From Master: next_layer=18, size torch.Size([1, 4096])
+[Node 1] 收到合并结果, next_layer=18
+[ReceiveInitial] From Master: layers 18-18, boundaries [0, 83, 91, 100], input torch.Size([1, 4096])
+
+[Node 1] 收到任务:
+  Layers: 18-18
+  Filter: [83:91]
+  Input: torch.Size([1, 4096])
+  Layer 18: Linear [83:91], output torch.Size([1, 8])
+[Node 1] 计算完成: torch.Size([1, 8]), 耗时: 0.002s
+[SendSlice] To Master: Layer 18, Node 1, size torch.Size([1, 8])
+[Node 1] 最后一层 (Layer 18) 计算完毕，本轮结束，准备迎接下一轮任务...
+
+关闭 DataNode 1 的Socket连接
+DataNode 1 AllReduce 模式已关闭
+
+----- DataNode 2 第 4 轮推理开始 -----
+[ReceiveInitial] From Master: layers 4-6, boundaries [0, 0, 0, 128], input torch.Size([1, 64, 112, 112])
+
+[Node 2] 收到任务:
+  Layers: 4-6
+  Filter: [0:128]
+  Input: torch.Size([1, 64, 112, 112])
+  Layer 4: Conv2d [0:128], output torch.Size([1, 128, 112, 112])
+  Layer 5: Conv2d [0:128], output torch.Size([1, 128, 112, 112])
+  Layer 6: MaxPool2d, output torch.Size([1, 128, 56, 56])
+[Node 2] 计算完成: torch.Size([1, 128, 56, 56]), 耗时: 0.246s
+[SendSlice] To Master: Layer 6, Node 2, size torch.Size([1, 128, 56, 56])
+[ReceiveMerged] From Master: next_layer=7, size torch.Size([1, 128, 56, 56])
+[Node 2] 收到合并结果, next_layer=7
+[ReceiveInitial] From Master: layers 7-9, boundaries [0, 0, 0, 256], input torch.Size([1, 128, 56, 56])
+
+[Node 2] 收到任务:
+  Layers: 7-9
+  Filter: [0:256]
+  Input: torch.Size([1, 128, 56, 56])
+  Layer 7: Conv2d [0:256], output torch.Size([1, 256, 56, 56])
+  Layer 8: Conv2d [0:256], output torch.Size([1, 256, 56, 56])
+  Layer 9: MaxPool2d, output torch.Size([1, 256, 28, 28])
+[Node 2] 计算完成: torch.Size([1, 256, 28, 28]), 耗时: 0.223s
+[SendSlice] To Master: Layer 9, Node 2, size torch.Size([1, 256, 28, 28])
+[ReceiveMerged] From Master: next_layer=10, size torch.Size([1, 256, 28, 28])
+[Node 2] 收到合并结果, next_layer=10
+[ReceiveInitial] From Master: layers 10-12, boundaries [0, 0, 0, 512], input torch.Size([1, 256, 28, 28])
+
+[Node 2] 收到任务:
+  Layers: 10-12
+  Filter: [0:512]
+  Input: torch.Size([1, 256, 28, 28])
+  Layer 10: Conv2d [0:512], output torch.Size([1, 512, 28, 28])
+  Layer 11: Conv2d [0:512], output torch.Size([1, 512, 28, 28])
+  Layer 12: MaxPool2d, output torch.Size([1, 512, 14, 14])
+[Node 2] 计算完成: torch.Size([1, 512, 14, 14]), 耗时: 0.218s
+[SendSlice] To Master: Layer 12, Node 2, size torch.Size([1, 512, 14, 14])
+[ReceiveMerged] From Master: next_layer=13, size torch.Size([1, 512, 14, 14])
+[Node 2] 收到合并结果, next_layer=13
+[ReceiveInitial] From Master: layers 13-15, boundaries [0, 0, 0, 512], input torch.Size([1, 512, 14, 14])
+
+[Node 2] 收到任务:
+  Layers: 13-15
+  Filter: [0:512]
+  Input: torch.Size([1, 512, 14, 14])
+  Layer 13: Conv2d [0:512], output torch.Size([1, 512, 14, 14])
+  Layer 14: Conv2d [0:512], output torch.Size([1, 512, 14, 14])
+  Layer 15: MaxPool2d, output torch.Size([1, 512, 7, 7])
+[Node 2] 计算完成: torch.Size([1, 512, 7, 7]), 耗时: 0.073s
+[SendSlice] To Master: Layer 15, Node 2, size torch.Size([1, 512, 7, 7])
+[ReceiveMerged] From Master: next_layer=16, size torch.Size([1, 512, 7, 7])
+[Node 2] 收到合并结果, next_layer=16
+[ReceiveInitial] From Master: layers 16-16, boundaries [0, 7, 12, 4096], input torch.Size([1, 512, 7, 7])
+
+[Node 2] 收到任务:
+  Layers: 16-16
+  Filter: [12:4096]
+  Input: torch.Size([1, 512, 7, 7])
+  Layer 16: Linear [12:4096], output torch.Size([1, 4084])
+[Node 2] 计算完成: torch.Size([1, 4084]), 耗时: 0.019s
+[SendSlice] To Master: Layer 16, Node 2, size torch.Size([1, 4084])
+[ReceiveMerged] From Master: next_layer=17, size torch.Size([1, 4096])
+[Node 2] 收到合并结果, next_layer=17
+[ReceiveInitial] From Master: layers 17-17, boundaries [0, 7, 12, 4096], input torch.Size([1, 4096])
+
+[Node 2] 收到任务:
+  Layers: 17-17
+  Filter: [12:4096]
+  Input: torch.Size([1, 4096])
+  Layer 17: Linear [12:4096], output torch.Size([1, 4084])
+[Node 2] 计算完成: torch.Size([1, 4084]), 耗时: 0.004s
+[SendSlice] To Master: Layer 17, Node 2, size torch.Size([1, 4084])
+[ReceiveMerged] From Master: next_layer=18, size torch.Size([1, 4096])
+[Node 2] 收到合并结果, next_layer=18
+[ReceiveInitial] From Master: layers 18-18, boundaries [0, 0, 0, 100], input torch.Size([1, 4096])
+
+[Node 2] 收到任务:
+  Layers: 18-18
+  Filter: [0:100]
+  Input: torch.Size([1, 4096])
+  Layer 18: Linear [0:100], output torch.Size([1, 100])
+[Node 2] 计算完成: torch.Size([1, 100]), 耗时: 0.001s
+[SendSlice] To Master: Layer 18, Node 2, size torch.Size([1, 100])
+[Node 2] 最后一层 (Layer 18) 计算完毕，本轮结束，准备迎接下一轮任务...
+
+----- DataNode 2 第 5 轮推理开始 -----
+[ReceiveInitial] From Master: layers 4-6, boundaries [0, 107, 118, 128], input torch.Size([1, 64, 112, 112])
+
+[Node 2] 收到任务:
+  Layers: 4-6
+  Filter: [118:128]
+  Input: torch.Size([1, 64, 112, 112])
+  Layer 4: Conv2d [118:128], output torch.Size([1, 10, 112, 112])
+  Layer 5: Conv2d [0:10], output torch.Size([1, 10, 112, 112])
+  Layer 6: MaxPool2d, output torch.Size([1, 10, 56, 56])
+[Node 2] 计算完成: torch.Size([1, 10, 56, 56]), 耗时: 0.031s
+[SendSlice] To Master: Layer 6, Node 2, size torch.Size([1, 10, 56, 56])
+[ReceiveMerged] From Master: next_layer=7, size torch.Size([1, 128, 56, 56])
+[Node 2] 收到合并结果, next_layer=7
+[ReceiveInitial] From Master: layers 7-9, boundaries [0, 214, 236, 256], input torch.Size([1, 128, 56, 56])
+
+[Node 2] 收到任务:
+  Layers: 7-9
+  Filter: [236:256]
+  Input: torch.Size([1, 128, 56, 56])
+  Layer 7: Conv2d [236:256], output torch.Size([1, 20, 56, 56])
+  Layer 8: Conv2d [0:20], output torch.Size([1, 20, 56, 56])
+  Layer 9: MaxPool2d, output torch.Size([1, 20, 28, 28])
+[Node 2] 计算完成: torch.Size([1, 20, 28, 28]), 耗时: 0.022s
+[SendSlice] To Master: Layer 9, Node 2, size torch.Size([1, 20, 28, 28])
+[ReceiveMerged] From Master: next_layer=10, size torch.Size([1, 256, 28, 28])
+[Node 2] 收到合并结果, next_layer=10
+[ReceiveInitial] From Master: layers 10-12, boundaries [0, 429, 473, 512], input torch.Size([1, 256, 28, 28])
+
+[Node 2] 收到任务:
+  Layers: 10-12
+  Filter: [473:512]
+  Input: torch.Size([1, 256, 28, 28])
+  Layer 10: Conv2d [473:512], output torch.Size([1, 39, 28, 28])
+  Layer 11: Conv2d [0:39], output torch.Size([1, 39, 28, 28])
+  Layer 12: MaxPool2d, output torch.Size([1, 39, 14, 14])
+[Node 2] 计算完成: torch.Size([1, 39, 14, 14]), 耗时: 0.018s
+[SendSlice] To Master: Layer 12, Node 2, size torch.Size([1, 39, 14, 14])
+[ReceiveMerged] From Master: next_layer=13, size torch.Size([1, 512, 14, 14])
+[Node 2] 收到合并结果, next_layer=13
+[ReceiveInitial] From Master: layers 13-15, boundaries [0, 429, 473, 512], input torch.Size([1, 512, 14, 14])
+
+[Node 2] 收到任务:
+  Layers: 13-15
+  Filter: [473:512]
+  Input: torch.Size([1, 512, 14, 14])
+  Layer 13: Conv2d [473:512], output torch.Size([1, 39, 14, 14])
+  Layer 14: Conv2d [0:39], output torch.Size([1, 39, 14, 14])
+  Layer 15: MaxPool2d, output torch.Size([1, 39, 7, 7])
+[Node 2] 计算完成: torch.Size([1, 39, 7, 7]), 耗时: 0.010s
+[SendSlice] To Master: Layer 15, Node 2, size torch.Size([1, 39, 7, 7])
+[ReceiveMerged] From Master: next_layer=16, size torch.Size([1, 512, 7, 7])
+[Node 2] 收到合并结果, next_layer=16
+[ReceiveInitial] From Master: layers 16-16, boundaries [0, 3438, 3791, 4096], input torch.Size([1, 512, 7, 7])
+
+[Node 2] 收到任务:
+  Layers: 16-16
+  Filter: [3791:4096]
+  Input: torch.Size([1, 512, 7, 7])
+  Layer 16: Linear [3791:4096], output torch.Size([1, 305])
+[Node 2] 计算完成: torch.Size([1, 305]), 耗时: 0.005s
+[SendSlice] To Master: Layer 16, Node 2, size torch.Size([1, 305])
+[ReceiveMerged] From Master: next_layer=17, size torch.Size([1, 4096])
+[Node 2] 收到合并结果, next_layer=17
+[ReceiveInitial] From Master: layers 17-17, boundaries [0, 3438, 3791, 4096], input torch.Size([1, 4096])
+
+[Node 2] 收到任务:
+  Layers: 17-17
+  Filter: [3791:4096]
+  Input: torch.Size([1, 4096])
+  Layer 17: Linear [3791:4096], output torch.Size([1, 305])
+[Node 2] 计算完成: torch.Size([1, 305]), 耗时: 0.001s
+[SendSlice] To Master: Layer 17, Node 2, size torch.Size([1, 305])
+[ReceiveMerged] From Master: next_layer=18, size torch.Size([1, 4096])
+[Node 2] 收到合并结果, next_layer=18
+[ReceiveInitial] From Master: layers 18-18, boundaries [0, 83, 91, 100], input torch.Size([1, 4096])
+
+[Node 2] 收到任务:
+  Layers: 18-18
+  Filter: [91:100]
+  Input: torch.Size([1, 4096])
+  Layer 18: Linear [91:100], output torch.Size([1, 9])
+[Node 2] 计算完成: torch.Size([1, 9]), 耗时: 0.000s
+[SendSlice] To Master: Layer 18, Node 2, size torch.Size([1, 9])
+[Node 2] 最后一层 (Layer 18) 计算完毕，本轮结束，准备迎接下一轮任务...
+
+关闭 DataNode 2 的Socket连接
+DataNode 2 AllReduce 模式已关闭

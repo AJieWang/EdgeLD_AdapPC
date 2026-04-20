@@ -87,7 +87,7 @@ class OffloadingPartitioner:
 
         return best_split
 
-    def solve_with_latency_constraint(self, device_power, edge_power, bandwidth, latency_budget, min_local_layers=1):
+    def solve_with_latency_constraint(self, device_power, edge_power, bandwidth, latency_budget, min_local_layers=1): # ILP 1 split_layer
         """
         在延迟约束下找最优卸载点
 
@@ -114,7 +114,7 @@ class OffloadingPartitioner:
 
         return min(feasible_splits, key=lambda x: x[1])[0], True
 
-    def get_offloading_plan(self, split_layer):
+    def get_offloading_plan(self, split_layer): # ILP 2 plan
         """
         获取卸载计划的详细描述
 
@@ -140,7 +140,7 @@ class OffloadingPartitioner:
             'description': f'Local: layers 1-{split_layer}, Edge: layers {split_layer + 1}-{self.total_layers}'
         }
 
-    def estimate_pipeline_times(self, split_layer, device_power, edge_power, bandwidth):
+    def estimate_pipeline_times(self, split_layer, device_power, edge_power, bandwidth): # ILP 3 timing
         """
         估算各阶段的时间开销
 

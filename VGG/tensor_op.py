@@ -1023,6 +1023,10 @@ class SlicedVGGExecutor:
             stride=stride, padding=padding
         )
 
+        # ====== 修复：加上丢失的 ReLU 激活函数 ======
+        output_tensor = torch.nn.functional.relu(output_tensor, inplace=True)
+        # ============================================
+
         return output_tensor
 
     def execute_sliced_fc(self, input_tensor, layer_id, start_neuron, end_neuron):
@@ -1067,8 +1071,34 @@ class SlicedVGGExecutor:
         else:
             sliced_bias = None
 
+        # ==========================================
+        # 修复 1：针对第 16 层的过渡处理 (Pool + Flatten)
+        # 如果输入还是 4 维的卷积特征图，必须先进行池化和展平
+        # ==========================================
+        if layer_id == 16 and len(input_tensor.shape) == 4:
+            # 1. 自适应池化到 7x7
+            input_tensor = torch.nn.functional.adaptive_avg_pool2d(input_tensor, (7, 7))
+            # 2. 展平 (保持 Batch 维度不变，从第 1 维开始展平)
+            input_tensor = torch.flatten(input_tensor, 1)
+
+        # ==========================================
+        # 核心计算：线性变换 (原代码逻辑)
+        # ==========================================
         output_tensor = torch.nn.functional.linear(input_tensor, sliced_weight, sliced_bias)
 
+        # ==========================================
+        # 修复 2：针对 16 和 17 层的激活与正则化 (ReLU + Dropout)
+        # ==========================================
+        if layer_id in [16, 17]:
+            # 1. 补上 ReLU
+            output_tensor = torch.nn.functional.relu(output_tensor, inplace=True)
+            
+            # 2. 补上 Dropout (可选)
+            # 注意：在分布式推理(Eval模式)下，Dropout相当于什么都不做(不丢弃神经元)，
+            # 所以直接用 output_tensor 即可。如果是为了后续支持分布式训练，可以加上：
+            output_tensor = torch.nn.functional.dropout(output_tensor, p=0.5, training=layer_module.training)
+
+        # 第 18 层(输出层)保持原样，直接返回 output_tensor
         return output_tensor
 
     def execute_sliced_layer_range(self, input_tensor, start_layer, end_layer,

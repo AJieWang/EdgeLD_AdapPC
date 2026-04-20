@@ -156,6 +156,14 @@ def datanode_persistent():
                     print(f"[Node {datanode_name}] 分到的通道/神经元数为0，跳过计算")
                     # 发送空标识（需与NameNode端逻辑匹配，也可发送空tensor）
                     allreduce_datanode.send_slice_to_master(end_layer, None)
+
+                    # ===== 【补上这个修复】 =====
+                    # 如果跳过的是最后一层，主节点不会下发合并结果，所以直接结束本轮！
+                    if end_layer == total_length:
+                        print(f"[Node {datanode_name}] 最后一层 (Layer {end_layer}) 空载完毕，本轮结束，准备迎接下一轮任务...")
+                        break
+                    # ==========================
+                    
                     # 接收合并结果，维持流程完整性
                     merged_data = allreduce_datanode.receive_merged_tensor()
                     next_layer_id = merged_data['next_layer_id']

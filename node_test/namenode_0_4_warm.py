@@ -58,7 +58,7 @@ class AdapCPNameNode:
         self.allreduce_namenode = AllReduceNameNode(namenode)
         self.scheduler = PipelineScheduler(datanode_num, total_length)
         self.allreduce_scheduler = AllReduceScheduler(datanode_num)
-        self.offloading_partitioner = OffloadingPartitioner()
+        self.offloading_partitioner = OffloadingPartitioner() # ILP 2 split_layer; 3 timing
         self.ddpg_partitioner = AdaptivePartitioner(datanode_num, state_dim = 12, use_dirichlet=True)
         self.current_split_layer = None
         self.current_ratios = None
@@ -96,7 +96,7 @@ class AdapCPNameNode:
                 layer_id, flops, output_size, is_maxpool, False, c_in, c_out, h, w
             )
 
-    def compute_offloading_point(self):
+    def compute_offloading_point(self): # ILP 1 split_layer
         """第一步：ILP决策Device vs Edge Cluster的卸载点"""
         self.current_split_layer = self.offloading_partitioner.solve_offloading_point(
             device_power, edge_cluster_power, bandwidth, min_local_layers=3
@@ -119,7 +119,7 @@ class AdapCPNameNode:
         min_ratio = 1.0 / c_out
         adjusted_ratios = np.maximum(self.current_ratios, min_ratio)
         adjusted_ratios = adjusted_ratios / adjusted_ratios.sum() # 重新归一化
-        # ------------------------------------------
+        # --------------------------------------------
 
         boundaries = [0]
         # 修复1：遍历所有比例，不要切片砍掉！
@@ -285,28 +285,33 @@ def run_adapcp_inference(namenode, adapcp_namenode, round_idx):
     input_tensor = torch.rand(1, 3, width, width)
     round_start_time = time.time()
 
+    # --------------------------------层分割算法 ILP---------------------------------------
     split_layer = adapcp_namenode.compute_offloading_point()
     plan = adapcp_namenode.offloading_partitioner.get_offloading_plan(split_layer)
     timing = adapcp_namenode.offloading_partitioner.estimate_pipeline_times(
         split_layer, device_power, edge_cluster_power, bandwidth
     )
-
     print(f"\n[ILP决策] {plan['description']}")
     print(f"[时间估算] 本地: {timing['local_time']:.3f}s, 传输: {timing['transfer_time']:.3f}s, 边缘: {timing['edge_time']:.3f}s")
+    # --------------------------------层分割算法 ILP---------------------------------------
 
-    local_output = adapcp_namenode.run_local_inference(input_tensor)
-
+    # --------------------------------层内分割算法 DDPG---------------------------------------
     ratios = adapcp_namenode.compute_ddpg_ratios(
         [(c, 0.01) for c in computing_power],
         network_state,
         epsilon=0.0
     )
     print(f"\n[DDPG决策] 分割比例: {[f'{r:.3f}' for r in ratios]}")
+    # --------------------------------层内分割算法 DDPG---------------------------------------
 
     c_out_for_boundaries = c_out_list[adapcp_namenode.current_split_layer - 1] if adapcp_namenode.current_split_layer > 0 else 64
     boundaries = adapcp_namenode.compute_filter_boundaries(c_out_for_boundaries)
     print(f"[Filter边界] {boundaries}")
 
+    # --------------------------------层分割优化 All Reduce---------------------------------------
+    # --------------------------------层分割优化 All Reduce---------------------------------------
+
+    local_output = adapcp_namenode.run_local_inference(input_tensor)
     edge_output = adapcp_namenode.run_allreduce_inference(local_output)
 
     # if edge_output is not None:
