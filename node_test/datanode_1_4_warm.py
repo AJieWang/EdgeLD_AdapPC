@@ -4,7 +4,7 @@ sys.path.append("../..")
 sys.path.append("..")
 
 from node_test.network_op import Network_init_datanode, Network_init_namenode
-from node_test.network_op import AllReduceDataNode
+from node_test.network_op import EdgeDataNode
 from node_test.num_set_up import Num_set_up
 from VGG.mydefine_VGG13 import VGG_model
 from VGG.tensor_op import SlicedVGGExecutor
@@ -14,12 +14,23 @@ import torch, time
 import threading
 import queue
 
+from node_test.network_op import Network_init_datanode, Network_init_namenode, datanode_ip
+from node_test.network_op import EdgeDataNode, EdgeP2PCommunicator
+
+MODEL_TYPE = 'VGG13'
+INPUT_WIDTH = 224
+
+if MODEL_TYPE == 'VGG16':
+    from VGG.mydefine_VGG16 import VGG_model as VGG_model_class
+else:
+    from VGG.mydefine_VGG13 import VGG_model as VGG_model_class
+
 num_set_up = Num_set_up()
 namenode_num = num_set_up.get_namenode_num()
 datanode_num = num_set_up.get_datanode_num()
 datanode_name = 1
 
-inference_model = VGG_model()
+inference_model = VGG_model_class()
 maxpool_layer = inference_model.get_maxpool_layer()
 conv_length = inference_model.get_conv_length()
 total_length = inference_model.get_total_length()
@@ -30,34 +41,79 @@ VALID_ROUNDS = 2
 TOTAL_ROUNDS = WARM_UP_ROUNDS + VALID_ROUNDS
 
 
-class AllReduceDataNodeExecutor:
-    """
-    AllReduce模式下子节点的切片执行器
+# class EdgeDataNodeExecutor:
+#     """
+#     边缘协作模式下子节点的执行器
 
-    使用 SlicedVGGExecutor 执行切片卷积
-    """
+#     接收plan（层范围），执行指定层，最后一层按DDPG边界返回部分通道
+#     """
 
-    def __init__(self, full_model):
+#     def __init__(self, full_model):
+#         self.model = full_model
+#         self.executor = SlicedVGGExecutor(full_model, model_type='VGG13')
+
+#     def execute_layers_with_output_slice(self, input_tensor, start_layer, end_layer, boundaries):
+#         """
+#         执行连续多层（卷积+池化+FC），最后一层按DDPG边界分割输出
+
+#         参数:
+#             input_tensor: 输入特征图
+#             start_layer: 起始层ID
+#             end_layer: 结束层ID
+#             boundaries: 通道/神经元分割边界，如 [0, 32, 64]
+
+#         返回:
+#             output_tensor: 只返回该节点负责的通道/神经元部分
+#         """
+#         current = input_tensor
+#         pool_layers = VGG13_POOL_LAYERS
+#         conv_layers = VGG13_CONV_LAYERS
+
+#         for layer_id in range(start_layer, end_layer + 1):
+#             if layer_id in pool_layers:
+#                 current = torch.nn.functional.max_pool2d(current, kernel_size=2, stride=2)
+#                 print(f"  Layer {layer_id}: MaxPool2d, output {current.size()}")
+
+#             elif layer_id in conv_layers:
+#                 if layer_id == end_layer:
+#                     start_filter = boundaries[datanode_name]
+#                     end_filter = boundaries[datanode_name + 1]
+#                     current = self.executor.execute_sliced_conv(current, layer_id, start_filter, end_filter)
+#                     print(f"  Layer {layer_id}: Conv2d [{start_filter}:{end_filter}], output {current.size()}")
+#                 else:
+#                     c_out = c_out_list[layer_id - 1]
+#                     current = self.executor.execute_sliced_conv(current, layer_id, 0, c_out)
+#                     print(f"  Layer {layer_id}: Conv2d [0:{c_out}], output {current.size()}")
+
+#             elif layer_id > 15:
+#                 if layer_id == end_layer:
+#                     start_neuron = boundaries[datanode_name]
+#                     end_neuron = boundaries[datanode_name + 1]
+#                     current = self.executor.execute_sliced_fc(current, layer_id, start_neuron, end_neuron)
+#                     print(f"  Layer {layer_id}: Linear [{start_neuron}:{end_neuron}], output {current.size()}")
+#                 else:
+#                     if layer_id == 16:
+#                         current = torch.nn.functional.adaptive_avg_pool2d(current, (7, 7))
+#                         current = torch.flatten(current, 1)
+#                     c_out = c_out_list[layer_id - 1]
+#                     current = self.executor.execute_sliced_fc(current, layer_id, 0, c_out)
+#                     print(f"  Layer {layer_id}: Linear [0:{c_out}], output {current.size()}")
+
+#         return current
+
+class EdgeDataNodeExecutor:
+    def __init__(self, full_model, p2p_communicator=None):
         self.model = full_model
         self.executor = SlicedVGGExecutor(full_model, model_type='VGG13')
+        self.p2p_communicator = p2p_communicator  # 引入边边通信器
 
-    def execute_sliced_layers(self, input_tensor, start_layer, end_layer, start_filter, end_filter):
-        """
-        执行连续多层切片卷积
-
-        参数:
-            input_tensor: [N, C_in, H, W] 输入特征图
-            start_layer: 起始层ID
-            end_layer: 结束层ID
-            start_filter: 起始通道索引
-            end_filter: 结束通道索引
-
-        返回:
-            output_tensor: 计算结果
-        """
+    def execute_layers_with_output_slice(self, input_tensor, start_layer, end_layer, boundaries, c_out_list):
         current = input_tensor
         pool_layers = VGG13_POOL_LAYERS
         conv_layers = VGG13_CONV_LAYERS
+
+        node_start_ratio = boundaries[datanode_name]
+        node_end_ratio = boundaries[datanode_name + 1]
 
         for layer_id in range(start_layer, end_layer + 1):
             if layer_id in pool_layers:
@@ -65,50 +121,57 @@ class AllReduceDataNodeExecutor:
                 print(f"  Layer {layer_id}: MaxPool2d, output {current.size()}")
 
             elif layer_id in conv_layers:
-                if layer_id == start_layer:
-                    s_f, e_f = start_filter, end_filter
+                c_out = c_out_list[layer_id - 1]
+                start_filter = int(c_out * node_start_ratio)
+                end_filter = int(c_out * node_end_ratio)
+
+                partial_output = self.executor.execute_sliced_conv(current, layer_id, start_filter, end_filter)
+                print(f"  Layer {layer_id}: Conv2d [{start_filter}:{end_filter}] / {c_out}, partial_output {partial_output.size()}")
+
+                if layer_id != end_layer:
+                    merge_start_time = time.time()
+                    current = self.p2p_communicator.all_gather_tensor(partial_output)
+                    print(f"  --> Edge P2P Merged: Layer {layer_id} output {current.size()}, cost: {time.time()-merge_start_time:.3f}s")
                 else:
-                    s_f, e_f = 0, current.size(1)
+                    current = partial_output
 
-                current = self.executor.execute_sliced_conv(current, layer_id, s_f, e_f)
-                print(f"  Layer {layer_id}: Conv2d [{s_f}:{e_f}], output {current.size()}")
+            elif layer_id > 15:
+                c_out = c_out_list[layer_id - 1]
+                start_neuron = int(c_out * node_start_ratio)
+                end_neuron = int(c_out * node_end_ratio)
 
-        return current
+                if layer_id == 16 and current.dim() > 2:
+                    current = torch.nn.functional.adaptive_avg_pool2d(current, (7, 7))
+                    current = torch.flatten(current, 1)
 
-    def execute_sliced_fc(self, input_tensor, start_layer, end_layer, start_neuron, end_neuron):
-        """
-        执行切片全连接层
+                partial_output = self.executor.execute_sliced_fc(current, layer_id, start_neuron, end_neuron)
+                print(f"  Layer {layer_id}: Linear [{start_neuron}:{end_neuron}] / {c_out}, partial_output {partial_output.size()}")
 
-        参数:
-            input_tensor: [N, in_features] 输入
-            start_layer: 起始层ID
-            end_layer: 结束层ID
-            start_neuron: 起始神经元索引
-            end_neuron: 结束神经元索引
-
-        返回:
-            output_tensor: 计算结果
-        """
-        current = input_tensor
-
-        if start_layer == 16:
-            current = torch.nn.functional.adaptive_avg_pool2d(current, (7, 7))
-            current = torch.flatten(current, 1)
-
-        for layer_id in range(start_layer, end_layer + 1):
-            if layer_id == start_layer:
-                s_n, e_n = start_neuron, end_neuron
-            else:
-                s_n, e_n = 0, current.size(1)
-
-            current = self.executor.execute_sliced_fc(current, layer_id, s_n, e_n)
-            print(f"  Layer {layer_id}: Linear [{s_n}:{e_n}], output {current.size()}")
+                if layer_id != end_layer:
+                    merge_start_time = time.time()
+                    current = self.p2p_communicator.all_gather_tensor(partial_output)
+                    print(f"  --> Edge P2P Merged: Layer {layer_id} output {current.size()}, cost: {time.time()-merge_start_time:.3f}s")
+                else:
+                    current = partial_output
 
         return current
 
+# def datanode_persistent():
+#     print(f"\n===== DataNode {datanode_name} 边缘协作模式启动 =====")
+
+#     datanode = Network_init_datanode(
+#         namenode_num=namenode_num,
+#         datanode_num=datanode_num,
+#         datanode_name=datanode_name
+#     )
+
+#     edge_datanode = EdgeDataNode(datanode)
+#     executor = EdgeDataNodeExecutor(inference_model)
+
+#     print(f"DataNode {datanode_name} 已建立连接")
 
 def datanode_persistent():
-    print(f"\n===== DataNode {datanode_name} AllReduce Filter Splitting 启动 =====")
+    print(f"\n===== DataNode {datanode_name} 边缘协作模式启动 =====")
 
     datanode = Network_init_datanode(
         namenode_num=namenode_num,
@@ -116,10 +179,19 @@ def datanode_persistent():
         datanode_name=datanode_name
     )
 
-    allreduce_datanode = AllReduceDataNode(datanode)
-    executor = AllReduceDataNodeExecutor(inference_model)
+    # 初始化边边通信网络 (P2P)
+    p2p_communicator = EdgeP2PCommunicator(
+        datanode_name=datanode_name,
+        total_datanodes=datanode_num,
+        ip_list=datanode_ip
+    )
+    p2p_communicator.initialize_p2p_network()
 
-    print(f"DataNode {datanode_name} 已建立连接")
+    edge_datanode = EdgeDataNode(datanode)
+    # 将 P2P 通信器传入执行器
+    executor = EdgeDataNodeExecutor(inference_model, p2p_communicator)
+
+    print(f"DataNode {datanode_name} 已建立所有连接 (NameNode & DataNodes)")
 
     round_idx = 0
 
@@ -129,88 +201,46 @@ def datanode_persistent():
         print(f"\n----- DataNode {datanode_name} 第 {round_idx} 轮推理开始 -----")
 
         try:
-            inference_count = 0
+            broadcast_data = edge_datanode.receive_initial_broadcast()
 
-            while True:
-                broadcast_data = allreduce_datanode.receive_initial_broadcast()
+            start_layer = broadcast_data['start_layer']
+            end_layer = broadcast_data['end_layer']
+            boundaries = broadcast_data['filter_boundaries']
+            c_out_list = broadcast_data['c_out_list']
+            input_tensor = broadcast_data['input_tensor']
 
-                start_layer = broadcast_data['start_layer']
-                end_layer = broadcast_data['end_layer']
-                filter_boundaries = broadcast_data['filter_boundaries']
-                input_tensor = broadcast_data['input_tensor']
+            print(f"\n[Node {datanode_name}] 收到任务:")
+            print(f"  Layers: {start_layer}-{end_layer}")
+            print(f"  通道边界: {boundaries}")
+            print(f"  c_out_list: {c_out_list}")
+            print(f"  Input: {input_tensor.size()}")
 
-                node_start_filter = filter_boundaries[datanode_name]
-                node_end_filter = filter_boundaries[datanode_name + 1]
+            if start_layer == 0 and end_layer == 0:
+                print(f"[Node {datanode_name}] 收到结束信号")
+                break
 
-                print(f"\n[Node {datanode_name}] 收到任务:")
-                print(f"  Layers: {start_layer}-{end_layer}")
-                print(f"  Filter: [{node_start_filter}:{node_end_filter}]")
-                print(f"  Input: {input_tensor.size()}")
+            node_start_ratio = boundaries[datanode_name]
+            node_end_ratio = boundaries[datanode_name + 1]
 
-                if start_layer == 0 and end_layer == 0:
-                    print(f"[Node {datanode_name}] 收到结束信号")
-                    break
+            if node_start_ratio >= node_end_ratio:
+                print(f"[Node {datanode_name}] 分到的比例为空，发送空tensor")
+                empty_slice = torch.zeros(1, 0, 1, 1) if start_layer <= 15 else torch.zeros(1, 0)
+                edge_datanode.send_slice_to_master(end_layer, empty_slice)
+                print(f"[Node {datanode_name}] 第 {round_idx} 轮推理完成（空载）")
+                continue
 
-                # ========== 新增：判断通道数/神经元数是否为0 ==========
-                if node_start_filter >= node_end_filter:
-                    print(f"[Node {datanode_name}] 分到的通道/神经元数为0，跳过计算")
-                    # 发送空标识（需与NameNode端逻辑匹配，也可发送空tensor）
-                    allreduce_datanode.send_slice_to_master(end_layer, None)
+            compute_start = time.time()
 
-                    # ===== 【补上这个修复】 =====
-                    # 如果跳过的是最后一层，主节点不会下发合并结果，所以直接结束本轮！
-                    if end_layer == total_length:
-                        print(f"[Node {datanode_name}] 最后一层 (Layer {end_layer}) 空载完毕，本轮结束，准备迎接下一轮任务...")
-                        break
-                    # ==========================
+            output_tensor = executor.execute_layers_with_output_slice(
+                input_tensor, start_layer, end_layer, boundaries, c_out_list
+            )
 
-                    # 接收合并结果，维持流程完整性
-                    merged_data = allreduce_datanode.receive_merged_tensor()
-                    next_layer_id = merged_data['next_layer_id']
-                    print(f"[Node {datanode_name}] 收到合并结果, next_layer={next_layer_id}")
-                    if next_layer_id == 0:
-                        print(f"[Node {datanode_name}] 第 {round_idx} 轮推理完成")
-                        break
-                    continue  # 跳过后续计算逻辑
-                # =====================================================
+            compute_time = time.time() - compute_start
+            print(f"[Node {datanode_name}] 计算完成: {output_tensor.size()}, 耗时: {compute_time:.3f}s")
 
-                compute_start = time.time()
+            edge_datanode.send_slice_to_master(end_layer, output_tensor)
 
-                if start_layer > conv_length:
-                    output_tensor = executor.execute_sliced_fc(
-                        input_tensor, start_layer, end_layer,
-                        node_start_filter, node_end_filter
-                    )
-                else:
-                    output_tensor = executor.execute_sliced_layers(
-                        input_tensor, start_layer, end_layer,
-                        node_start_filter, node_end_filter
-                    )
-
-                compute_time = time.time() - compute_start
-                print(f"[Node {datanode_name}] 计算完成: {output_tensor.size()}, 耗时: {compute_time:.3f}s")
-
-                allreduce_datanode.send_slice_to_master(end_layer, output_tensor)
-
-                # ==================== [新增逻辑开始] ====================
-                # 如果当前完成的是整个模型的最后一层（比如第 18 层），则跳过接收合并结果，直接结束本轮循环
-                if end_layer == total_length:
-                    print(f"[Node {datanode_name}] 最后一层 (Layer {end_layer}) 计算完毕，本轮结束，准备迎接下一轮任务...")
-                    break 
-                    # 这里使用 break 还是 continue 取决于你子节点的 while 循环是怎么嵌套的。
-                    # 核心目的：跳出对 receive_merged_tensor 的调用，回到头部去调用 receive_initial_broadcast() 等待下一轮。
-                # ==================== [新增逻辑结束] ====================
-
-                merged_data = allreduce_datanode.receive_merged_tensor()
-                next_layer_id = merged_data['next_layer_id']
-
-                print(f"[Node {datanode_name}] 收到合并结果, next_layer={next_layer_id}")
-
-                if next_layer_id == 0:
-                    print(f"[Node {datanode_name}] 第 {round_idx} 轮推理完成")
-                    break
-
-                inference_count += 1
+            print(f"[Node {datanode_name}] 第 {round_idx} 轮推理完成")
 
         except (BrokenPipeError, ConnectionResetError):
             print(f"第 {round_idx} 轮: 连接被 NameNode 关闭，等待新连接...")
@@ -221,7 +251,7 @@ def datanode_persistent():
                 datanode_num=datanode_num,
                 datanode_name=datanode_name
             )
-            allreduce_datanode = AllReduceDataNode(datanode)
+            edge_datanode = EdgeDataNode(datanode)
             continue
 
         except Exception as e:
@@ -230,10 +260,11 @@ def datanode_persistent():
             traceback.print_exc()
             break
 
-    allreduce_datanode.close()
+    p2p_communicator.close_all()
+    edge_datanode.close()
     datanode.close()
     print(f"\n关闭 DataNode {datanode_name} 的Socket连接")
-    print(f"DataNode {datanode_name} AllReduce 模式已关闭")
+    print(f"DataNode {datanode_name} 边缘协作模式已关闭")
 
 
 if __name__ == "__main__":

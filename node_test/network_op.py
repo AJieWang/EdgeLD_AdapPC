@@ -7,6 +7,7 @@ import torch.nn as nn
 import numpy as np
 from VGG.tensor_op import merge_total_tensor, merge_part_tensor, merge_total_tensor_pooled, merge_total_tensor_pabc
 
+import threading
 
 # IP设置
 namenode_ip = "127.0.0.1"
@@ -479,62 +480,58 @@ def get_numpy_size(input_tensor):
 #     return input_numpy_size.encode(encoding="utf-8")
 
 
-# ==================== AdapCP AllReduce Network Protocol ====================
-
-class AllReduceNameNode:
+class EdgeNNNode:
     """
-    AllReduce模式的主节点网络通信类
+    边缘协作网络通信类（替代AllReduce）
 
     支持：
-    1. 广播初始输入给所有DataNode
-    2. 收集各DataNode的切片结果
+    1. 广播plan和初始输入给所有DataNode
+    2. 收集各DataNode的部分通道输出
     3. 广播合并后的完整张量给所有DataNode
     """
 
     def __init__(self, namenode):
-        """
-        参数:
-            namenode: 已建立的 Network_init_namenode 实例
-        """
         self.namenode = namenode
         self.datanode_num = namenode.datanode_num
 
-    def broadcast_input_to_all(self, input_tensor, start_layer, end_layer, filter_boundaries):
+    def broadcast_plan_to_all(self, plan, boundaries, input_tensor, c_out_list):
         """
-        广播完整输入给所有DataNode（用于AllReduce的第一轮）
+        广播执行计划给所有DataNode
 
-        协议: start@#$%end@#$%n_boundaries@#$%boundary0@#$%boundary1@#$%...@#$%tensor
+        协议: start_layer@#$%end_layer@#$%n_boundaries@#$%boundary0@#$%boundary1@#$%...@#$%n_c_out@#$%c_out0@#$%c_out1@#$%...@#$%tensor
 
         参数:
+            plan: dict, {'start_layer': int, 'end_layer': int}
+            boundaries: list, 通道分割比例边界，如 [0, 0.5, 0.8, 1.0]
             input_tensor: 完整的输入张量
-            start_layer: 起始层ID
-            end_layer: 结束层ID
-            filter_boundaries: 通道分割边界，如 [0, 64, 128, 256]
+            c_out_list: list, 各层的输出通道数
         """
         for dn_id in range(self.datanode_num):
-            self._send_broadcast_task(dn_id, input_tensor, start_layer, end_layer, filter_boundaries)
+            self._send_broadcast_task(dn_id, plan['start_layer'], plan['end_layer'], boundaries, input_tensor, c_out_list)
 
-    def _send_broadcast_task(self, datanode_id, input_tensor, start_layer, end_layer, filter_boundaries):
-        """向单个DataNode发送广播任务"""
+    def _send_broadcast_task(self, datanode_id, start_layer, end_layer, boundaries, input_tensor, c_out_list):
         start_str = str(start_layer).encode('utf-8')
         end_str = str(end_layer).encode('utf-8')
-        n_boundaries = str(len(filter_boundaries)).encode('utf-8')
+        n_boundaries = str(len(boundaries)).encode('utf-8')
 
         input_numpy = input_tensor.detach().numpy()
         input_numpy_size = get_numpy_size(input_tensor)
         input_bytes = input_numpy.tobytes()
 
-        boundaries_bytes = b'%&%'.join([str(b).encode('utf-8') for b in filter_boundaries])
-        
-        send_data = start_str + b'@#$%' + end_str + b'@#$%' + n_boundaries + b'@#$%' + boundaries_bytes + b'@#$%' + input_numpy_size + b'@#$%' + input_bytes
+        boundaries_bytes = b'%&%'.join([str(b).encode('utf-8') for b in boundaries])
 
-        # [FIX] Pad the length string to exactly 16 bytes
+        n_c_out = str(len(c_out_list)).encode('utf-8')
+        c_out_bytes = b'%&%'.join([str(c).encode('utf-8') for c in c_out_list])
+
+        send_data = (start_str + b'@#$%' + end_str + b'@#$%' + n_boundaries + b'@#$%' + 
+                     boundaries_bytes + b'@#$%' + n_c_out + b'@#$%' + c_out_bytes + b'@#$%' + 
+                     input_numpy_size + b'@#$%' + input_bytes)
+
         send_data_len = str(len(send_data)).encode('utf-8').ljust(16)
         self.namenode.client_socket[datanode_id].sendall(send_data_len)
         self.namenode.client_socket[datanode_id].sendall(send_data)
-        # -----------------------------------------------
 
-        print(f"[Broadcast] Sent to Node {datanode_id}: layers {start_layer}-{end_layer}, boundaries {filter_boundaries}")
+        print(f"[Broadcast] To Node {datanode_id}: layers {start_layer}-{end_layer}, boundaries {boundaries}")
 
     def collect_slice_from_datanode(self, datanode_id, transfer_time):
         """
@@ -545,15 +542,14 @@ class AllReduceNameNode:
         返回:
             tuple: (layer_id, node_id, tensor_slice)
         """
-        # [FIX] Read exactly 16 bytes for the header
         data_total_len_bytes = b''
         while len(data_total_len_bytes) < 16:
             packet = self.namenode.client_socket[datanode_id].recv(16 - len(data_total_len_bytes))
-            if not packet: break
+            if not packet:
+                break
             data_total_len_bytes += packet
-            
+
         data_total_len = int(data_total_len_bytes.decode('utf-8').strip())
-        # -------------------------------------------
 
         recv_data_len = 0
         recv_data = b''
@@ -580,7 +576,7 @@ class AllReduceNameNode:
 
     def broadcast_merged_to_all(self, merged_tensor, next_layer_id=None):
         """
-        广播合并后的完整张量给所有DataNode（用于AllReduce的后续轮次）
+        广播合并后的完整张量给所有DataNode
 
         协议: next_layer_id@#$%tensor (next_layer_id为0表示无下一层)
 
@@ -592,7 +588,6 @@ class AllReduceNameNode:
             self._send_merged_task(dn_id, merged_tensor, next_layer_id)
 
     def _send_merged_task(self, datanode_id, merged_tensor, next_layer_id):
-        """向单个DataNode发送合并结果"""
         next_layer_str = str(next_layer_id).encode('utf-8')
 
         input_numpy = merged_tensor.detach().numpy()
@@ -601,55 +596,45 @@ class AllReduceNameNode:
 
         send_data = next_layer_str + b'@#$%' + input_numpy_size + b'@#$%' + input_bytes
 
-        # [FIX] Pad the length string to exactly 16 bytes
         send_data_len = str(len(send_data)).encode('utf-8').ljust(16)
         self.namenode.client_socket[datanode_id].sendall(send_data_len)
         self.namenode.client_socket[datanode_id].sendall(send_data)
-        # -----------------------------------------------
 
-        print(f"[BroadcastMerged] Sent to Node {datanode_id}: next_layer={next_layer_id}, size={merged_tensor.size()}")
+        print(f"[BroadcastMerged] To Node {datanode_id}: next_layer={next_layer_id}, size={merged_tensor.size()}")
 
 
-class AllReduceDataNode:
+class EdgeDataNode:
     """
-    AllReduce模式的子节点网络通信类
+    边缘协作子节点网络通信类（替代AllReduceDataNode）
 
     支持：
-    1. 接收主节点广播的初始输入
+    1. 接收主节点广播的plan和初始输入
     2. 执行切片计算后提交切片给主节点
     3. 接收主节点广播的合并后完整张量
     """
 
-    MSG_TYPE_INITIAL = 1
-    MSG_TYPE_SLICE = 2
-    MSG_TYPE_MERGED = 3
-
     def __init__(self, datanode):
-        """
-        参数:
-            datanode: 已建立的 Network_init_datanode 实例
-        """
         self.datanode = datanode
         self.datanode_name = datanode.datanode_name
 
     def receive_initial_broadcast(self):
         """
-        接收主节点广播的初始输入
+        接收主节点广播的plan和初始输入
 
-        协议: start@#$%end@#$%n_boundaries@#$%boundary0@#$%boundary1@#$%...@#$%tensor
+        协议: start@#$%end@#$%n_boundaries@#$%boundary0@#$%boundary1@#$%...@#$%n_c_out@#$%c_out0@#$%c_out1@#$%...@#$%tensor
 
         返回:
-            dict: {'start_layer': int, 'end_layer': int, 'filter_boundaries': list, 'input_tensor': Tensor}
+            dict: {'start_layer': int, 'end_layer': int, 'filter_boundaries': list, 'c_out_list': list, 'input_tensor': Tensor}
         """
-        # [FIX] Read exactly 16 bytes for the header
         data_total_len_bytes = b''
         while len(data_total_len_bytes) < 16:
             packet = self.datanode.datanode_socket.recv(16 - len(data_total_len_bytes))
-            if not packet: break
+            if not packet:
+                break
             data_total_len_bytes += packet
 
         data_total_len = int(data_total_len_bytes.decode('utf-8').strip())
-        
+
         recv_data_len = 0
         recv_data = b''
         while recv_data_len < data_total_len:
@@ -658,7 +643,6 @@ class AllReduceDataNode:
             recv_data += recv_data_temp
 
         split_list = recv_data.split(b'@#$%')
-                # -----------------------------------------------  
 
         start_layer = int(str(split_list[0], encoding='utf-8'))
         end_layer = int(str(split_list[1], encoding='utf-8'))
@@ -668,19 +652,30 @@ class AllReduceDataNode:
         boundaries_list = []
         for b in boundaries_part.split(b'%&%'):
             if b:
-                boundaries_list.append(int(str(b, encoding='utf-8')))
+                boundaries_list.append(float(str(b, encoding='utf-8')))
 
-        recv_numpy_size = get_recv_tensor_size(split_list[4])
-        recv_numpy = np.frombuffer(split_list[5], dtype=np.float32)
+        n_c_out = int(str(split_list[4], encoding='utf-8'))
+        
+        # 获取用 %&% 拼接的 c_out 字符串，并进行二次拆分
+        c_out_part = split_list[5]
+        c_out_list = []
+        for c in c_out_part.split(b'%&%'):
+            if c:
+                c_out_list.append(int(str(c, encoding='utf-8')))
+
+        # 因为 c_out_bytes 是一个整体占据了索引 5，所以 numpy 数据的索引是固定的 6 和 7
+        recv_numpy_size = get_recv_tensor_size(split_list[6])
+        recv_numpy = np.frombuffer(split_list[7], dtype=np.float32)
         recv_numpy = np.reshape(recv_numpy, newshape=recv_numpy_size)
         input_tensor = torch.from_numpy(recv_numpy)
 
-        print(f"[ReceiveInitial] From Master: layers {start_layer}-{end_layer}, boundaries {boundaries_list}, input {input_tensor.size()}")
+        print(f"[ReceiveInitial] From Master: layers {start_layer}-{end_layer}, boundaries {boundaries_list}, c_out_list {c_out_list}, input {input_tensor.size()}")
 
         return {
             'start_layer': start_layer,
             'end_layer': end_layer,
             'filter_boundaries': boundaries_list,
+            'c_out_list': c_out_list,
             'input_tensor': input_tensor
         }
 
@@ -697,24 +692,18 @@ class AllReduceDataNode:
         layer_str = str(layer_id).encode('utf-8')
         node_str = str(self.datanode_name).encode('utf-8')
 
-        # 增加对 None 的处理
         if tensor_slice is None:
-            # 发送一个表示“空”的标志，或者一个尺寸为0的tensor
             tensor_slice = torch.zeros(1, 0, 1, 1)
-        # ------------------------------------------------
 
-        # 错误：input_numpy是numpy数组，改为传入原始tensor_slice（torch.Tensor）
         input_numpy = tensor_slice.detach().numpy()
-        input_numpy_size = get_numpy_size(tensor_slice)  # 修复这里 
+        input_numpy_size = get_numpy_size(tensor_slice)
         input_bytes = input_numpy.tobytes()
 
         send_data = layer_str + b'@#$%' + node_str + b'@#$%' + input_numpy_size + b'@#$%' + input_bytes
 
-        # [FIX] Pad the length string to exactly 16 bytes
         send_data_len = str(len(send_data)).encode('utf-8').ljust(16)
         self.datanode.datanode_socket.sendall(send_data_len)
         self.datanode.datanode_socket.sendall(send_data)
-        # -----------------------------------------------
 
         print(f"[SendSlice] To Master: Layer {layer_id}, Node {self.datanode_name}, size {tensor_slice.size()}")
 
@@ -728,15 +717,15 @@ class AllReduceDataNode:
             dict: {'next_layer_id': int, 'tensor': Tensor}
             如果 next_layer_id == 0 表示推理结束
         """
-        # [FIX] Read exactly 16 bytes for the header
         data_total_len_bytes = b''
         while len(data_total_len_bytes) < 16:
             packet = self.datanode.datanode_socket.recv(16 - len(data_total_len_bytes))
-            if not packet: break
+            if not packet:
+                break
             data_total_len_bytes += packet
 
         data_total_len = int(data_total_len_bytes.decode('utf-8').strip())
-        
+
         recv_data_len = 0
         recv_data = b''
         while recv_data_len < data_total_len:
@@ -745,7 +734,6 @@ class AllReduceDataNode:
             recv_data += recv_data_temp
 
         split_list = recv_data.split(b'@#$%')
-        # -----------------------------------------------
 
         next_layer_id = int(str(split_list[0], encoding='utf-8'))
 
@@ -762,5 +750,118 @@ class AllReduceDataNode:
         }
 
     def close(self):
-        """关闭连接"""
         self.datanode.close()
+
+# ---------------------- 增加 P2P 通信类 ----------------------
+class EdgeP2PCommunicator:
+    """
+    DataNode 之间的边边通信类 (P2P Mesh Network)
+    用于在连续卷积层计算间，互相交换并合并分割后的特征图 (Filter Splitting 合并)
+    """
+    def __init__(self, datanode_name, total_datanodes, ip_list, base_port=20000):
+        self.node_id = datanode_name
+        self.total_nodes = total_datanodes
+        self.ip_list = ip_list
+        self.base_port = base_port
+        self.sockets = {}  # 保存与其他 DataNode 的连接 {node_id: socket}
+
+    def initialize_p2p_network(self):
+        print(f"[P2P] DataNode {self.node_id} 开始建立边边通信网络...")
+        
+        # 1. 作为服务端，监听来自 node_id 更大的节点的连接
+        self.server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_sock.bind((self.ip_list[self.node_id], self.base_port + self.node_id))
+        self.server_sock.listen(self.total_nodes)
+
+        # 2. 作为客户端，主动连接 node_id 更小的节点
+        for target_id in range(self.node_id):
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            while True:
+                try:
+                    sock.connect((self.ip_list[target_id], self.base_port + target_id))
+                    # 发送自己的 node_id 作为身份验证
+                    sock.sendall(str(self.node_id).encode('utf-8').ljust(16))
+                    self.sockets[target_id] = sock
+                    print(f"[P2P] DataNode {self.node_id} 已连接到 DataNode {target_id}")
+                    break
+                except ConnectionRefusedError:
+                    time.sleep(0.5)
+
+        # 3. 作为服务端，接受 node_id 更大的节点的连接
+        for _ in range(self.node_id + 1, self.total_nodes):
+            conn, addr = self.server_sock.accept()
+            # 接收对方的身份
+            remote_id = int(conn.recv(16).decode('utf-8').strip())
+            self.sockets[remote_id] = conn
+            print(f"[P2P] DataNode {self.node_id} 接受了 DataNode {remote_id} 的连接")
+
+        print(f"[P2P] DataNode {self.node_id} 边边通信网络建立完成！")
+
+    def all_gather_tensor(self, my_tensor_slice):
+        """
+        核心操作：发送自己的张量切片给所有人，接收所有人的切片，按通道拼接成完整的张量
+        """
+        gathered_slices = {self.node_id: my_tensor_slice}
+
+        # 为了避免死锁，使用多线程同时接收其他节点的数据
+        def recv_task(remote_id, sock):
+            tensor = self._recv_tensor(sock)
+            gathered_slices[remote_id] = tensor
+
+        threads = []
+        for remote_id, sock in self.sockets.items():
+            t = threading.Thread(target=recv_task, args=(remote_id, sock))
+            t.start()
+            threads.append(t)
+
+        # 主线程负责向所有节点发送自己的数据
+        for remote_id, sock in self.sockets.items():
+            self._send_tensor(sock, my_tensor_slice)
+
+        # 等待所有接收任务完成
+        for t in threads:
+            t.join()
+
+        # 按照 node_id 的顺序将特征图在 通道维度(dim=1) 上拼接
+        sorted_tensors = [gathered_slices[i] for i in range(self.total_nodes)]
+        merged_tensor = torch.cat(sorted_tensors, dim=1)
+        
+        return merged_tensor
+
+    def _send_tensor(self, sock, tensor):
+        input_numpy = tensor.detach().numpy()
+        input_numpy_size = get_numpy_size(tensor)
+        input_bytes = input_numpy.tobytes()
+        send_data = input_numpy_size + b'@#$%' + input_bytes
+        send_data_len = str(len(send_data)).encode('utf-8').ljust(16)
+        sock.sendall(send_data_len)
+        sock.sendall(send_data)
+
+    def _recv_tensor(self, sock):
+        data_total_len_bytes = b''
+        while len(data_total_len_bytes) < 16:
+            packet = sock.recv(16 - len(data_total_len_bytes))
+            if not packet:
+                break
+            data_total_len_bytes += packet
+        data_total_len = int(data_total_len_bytes.decode('utf-8').strip())
+
+        recv_data_len = 0
+        recv_data = b''
+        while recv_data_len < data_total_len:
+            recv_data_temp = sock.recv(min(10240, data_total_len - recv_data_len))
+            recv_data_len += len(recv_data_temp)
+            recv_data += recv_data_temp
+
+        split_list = recv_data.split(b'@#$%')
+        recv_numpy_size = get_recv_tensor_size(split_list[0])
+        recv_numpy = np.frombuffer(split_list[1], dtype=np.float32)
+        recv_numpy = np.reshape(recv_numpy, newshape=recv_numpy_size)
+        return torch.from_numpy(recv_numpy)
+
+    def close_all(self):
+        for sock in self.sockets.values():
+            sock.close()
+        self.server_sock.close()
+# ---------------------- 增加 P2P 通信类 ----------------------

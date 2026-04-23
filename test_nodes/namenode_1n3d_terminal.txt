@@ -1,216 +1,56 @@
 ============================================================
-第 4 轮 AdapCP 推理 (AllReduce Filter Splitting)
+第 4 轮 AdapCP 边缘协作推理
 ============================================================
 
-[ILP决策] Local: layers 1-3, Edge: layers 4-15
-[时间估算] 本地: 0.092s, 传输: 0.032s, 边缘: 0.726s
+[ILP决策] Local: layers 1-3, Edge: layers 4-18
+[时间估算] 本地: 0.092s, 传输: 0.032s, 边缘: 0.764s
+
+[DDPG决策] 分割比例: ['0.341', '0.332', '0.327'] (Epsilon: 0.0)
+[Filter边界] [0.0, 0.340673, 0.672652, 1.0]
 
 ===== 本地推理: Layers 1-3 =====
-本地推理耗时: 0.190s, 输出尺寸: torch.Size([1, 64, 112, 112])
+本地推理耗时: 0.202s, 输出尺寸: torch.Size([1, 64, 112, 112])
 
-[DDPG决策] 分割比例: ['0.002', '0.001', '0.997']
-[Filter边界] [0, 0, 0, 64]
-
-===== AllReduce边缘推理: Layers 4-18 =====
-层分组: [(4, 6), (7, 9), (10, 12), (13, 15), (16, 16), (17, 17), (18, 18)]
-
---- Layer Group 1: Layers 4-6 ---
-当前组 (目标通道数 128) Filter 分割边界: [0, 0, 0, 128]
-[Broadcast] Sent to Node 0: layers 4-6, boundaries [0, 0, 0, 128]
-[Broadcast] Sent to Node 1: layers 4-6, boundaries [0, 0, 0, 128]
-[Broadcast] Sent to Node 2: layers 4-6, boundaries [0, 0, 0, 128]
-[Collect] From Node 0, Layer 6: torch.Size([1, 0, 1, 1])
-[Collect] From Node 1, Layer 6: torch.Size([1, 0, 1, 1])
-[Collect] From Node 2, Layer 6: torch.Size([1, 128, 56, 56])
-合并后尺寸: torch.Size([1, 128, 56, 56])
-[BroadcastMerged] Sent to Node 0: next_layer=7, size=torch.Size([1, 128, 56, 56])
-[BroadcastMerged] Sent to Node 1: next_layer=7, size=torch.Size([1, 128, 56, 56])
-[BroadcastMerged] Sent to Node 2: next_layer=7, size=torch.Size([1, 128, 56, 56])
-
---- Layer Group 2: Layers 7-9 ---
-当前组 (目标通道数 256) Filter 分割边界: [0, 0, 0, 256]
-[Broadcast] Sent to Node 0: layers 7-9, boundaries [0, 0, 0, 256]
-[Broadcast] Sent to Node 1: layers 7-9, boundaries [0, 0, 0, 256]
-[Broadcast] Sent to Node 2: layers 7-9, boundaries [0, 0, 0, 256]
-[Collect] From Node 0, Layer 9: torch.Size([1, 0, 1, 1])
-[Collect] From Node 1, Layer 9: torch.Size([1, 0, 1, 1])
-[Collect] From Node 2, Layer 9: torch.Size([1, 256, 28, 28])
-合并后尺寸: torch.Size([1, 256, 28, 28])
-[BroadcastMerged] Sent to Node 0: next_layer=10, size=torch.Size([1, 256, 28, 28])
-[BroadcastMerged] Sent to Node 1: next_layer=10, size=torch.Size([1, 256, 28, 28])
-[BroadcastMerged] Sent to Node 2: next_layer=10, size=torch.Size([1, 256, 28, 28])
-
---- Layer Group 3: Layers 10-12 ---
-当前组 (目标通道数 512) Filter 分割边界: [0, 0, 0, 512]
-[Broadcast] Sent to Node 0: layers 10-12, boundaries [0, 0, 0, 512]
-[Broadcast] Sent to Node 1: layers 10-12, boundaries [0, 0, 0, 512]
-[Broadcast] Sent to Node 2: layers 10-12, boundaries [0, 0, 0, 512]
-[Collect] From Node 0, Layer 12: torch.Size([1, 0, 1, 1])
-[Collect] From Node 1, Layer 12: torch.Size([1, 0, 1, 1])
-[Collect] From Node 2, Layer 12: torch.Size([1, 512, 14, 14])
-合并后尺寸: torch.Size([1, 512, 14, 14])
-[BroadcastMerged] Sent to Node 0: next_layer=13, size=torch.Size([1, 512, 14, 14])
-[BroadcastMerged] Sent to Node 1: next_layer=13, size=torch.Size([1, 512, 14, 14])
-[BroadcastMerged] Sent to Node 2: next_layer=13, size=torch.Size([1, 512, 14, 14])
-
---- Layer Group 4: Layers 13-15 ---
-当前组 (目标通道数 512) Filter 分割边界: [0, 0, 0, 512]
-[Broadcast] Sent to Node 0: layers 13-15, boundaries [0, 0, 0, 512]
-[Broadcast] Sent to Node 1: layers 13-15, boundaries [0, 0, 0, 512]
-[Broadcast] Sent to Node 2: layers 13-15, boundaries [0, 0, 0, 512]
-[Collect] From Node 0, Layer 15: torch.Size([1, 0, 1, 1])
-[Collect] From Node 1, Layer 15: torch.Size([1, 0, 1, 1])
-[Collect] From Node 2, Layer 15: torch.Size([1, 512, 7, 7])
-合并后尺寸: torch.Size([1, 512, 7, 7])
-[BroadcastMerged] Sent to Node 0: next_layer=16, size=torch.Size([1, 512, 7, 7])
-[BroadcastMerged] Sent to Node 1: next_layer=16, size=torch.Size([1, 512, 7, 7])
-[BroadcastMerged] Sent to Node 2: next_layer=16, size=torch.Size([1, 512, 7, 7])
-
---- Layer Group 5: Layers 16-16 ---
-当前组 (目标通道数 4096) Filter 分割边界: [0, 7, 12, 4096]
-[Broadcast] Sent to Node 0: layers 16-16, boundaries [0, 7, 12, 4096]
-[Broadcast] Sent to Node 1: layers 16-16, boundaries [0, 7, 12, 4096]
-[Broadcast] Sent to Node 2: layers 16-16, boundaries [0, 7, 12, 4096]
-[Collect] From Node 0, Layer 16: torch.Size([1, 7])
-[Collect] From Node 1, Layer 16: torch.Size([1, 5])
-[Collect] From Node 2, Layer 16: torch.Size([1, 4084])
-合并后尺寸: torch.Size([1, 4096])
-[BroadcastMerged] Sent to Node 0: next_layer=17, size=torch.Size([1, 4096])
-[BroadcastMerged] Sent to Node 1: next_layer=17, size=torch.Size([1, 4096])
-[BroadcastMerged] Sent to Node 2: next_layer=17, size=torch.Size([1, 4096])
-
---- Layer Group 6: Layers 17-17 ---
-当前组 (目标通道数 4096) Filter 分割边界: [0, 7, 12, 4096]
-[Broadcast] Sent to Node 0: layers 17-17, boundaries [0, 7, 12, 4096]
-[Broadcast] Sent to Node 1: layers 17-17, boundaries [0, 7, 12, 4096]
-[Broadcast] Sent to Node 2: layers 17-17, boundaries [0, 7, 12, 4096]
-[Collect] From Node 0, Layer 17: torch.Size([1, 7])
-[Collect] From Node 1, Layer 17: torch.Size([1, 5])
-[Collect] From Node 2, Layer 17: torch.Size([1, 4084])
-合并后尺寸: torch.Size([1, 4096])
-[BroadcastMerged] Sent to Node 0: next_layer=18, size=torch.Size([1, 4096])
-[BroadcastMerged] Sent to Node 1: next_layer=18, size=torch.Size([1, 4096])
-[BroadcastMerged] Sent to Node 2: next_layer=18, size=torch.Size([1, 4096])
-
---- Layer Group 7: Layers 18-18 ---
-当前组 (目标通道数 100) Filter 分割边界: [0, 0, 0, 100]
-[Broadcast] Sent to Node 0: layers 18-18, boundaries [0, 0, 0, 100]
-[Broadcast] Sent to Node 1: layers 18-18, boundaries [0, 0, 0, 100]
-[Broadcast] Sent to Node 2: layers 18-18, boundaries [0, 0, 0, 100]
-[Collect] From Node 0, Layer 18: torch.Size([1, 0, 1, 1])
-[Collect] From Node 1, Layer 18: torch.Size([1, 0, 1, 1])
-[Collect] From Node 2, Layer 18: torch.Size([1, 100])
+===== 边缘协作推理: Layers 4-18 =====
+[广播Plan] {'start_layer': 4, 'end_layer': 18}, 通道边界: [0.0, 0.340673, 0.672652, 1.0]
+[Broadcast] To Node 0: layers 4-18, boundaries [0.0, 0.340673, 0.672652, 1.0]
+[Broadcast] To Node 1: layers 4-18, boundaries [0.0, 0.340673, 0.672652, 1.0]
+[Broadcast] To Node 2: layers 4-18, boundaries [0.0, 0.340673, 0.672652, 1.0]
+[Collect] From Node 0, Layer 18: torch.Size([1, 34])
+[Collect] From Node 1, Layer 18: torch.Size([1, 33])
+[Collect] From Node 2, Layer 18: torch.Size([1, 33])
 合并后尺寸: torch.Size([1, 100])
 
 [完成] 第 4 轮推理
-[统计] 总耗时: 1.347s | 传输耗时: 0.000s
+[统计] 总耗时: 1.345s | 传输耗时: 0.000s
+[DRL更新] 记录执行延迟: 1.345s -> 映射为 Reward: 9.704
 
 ============================================================
-第 5 轮 AdapCP 推理 (AllReduce Filter Splitting)
+第 5 轮 AdapCP 边缘协作推理
 ============================================================
 
-[ILP决策] Local: layers 1-3, Edge: layers 4-15
-[时间估算] 本地: 0.092s, 传输: 0.032s, 边缘: 0.726s
+[ILP决策] Local: layers 1-3, Edge: layers 4-18
+[时间估算] 本地: 0.092s, 传输: 0.032s, 边缘: 0.764s
+
+[DDPG决策] 分割比例: ['0.341', '0.332', '0.327'] (Epsilon: 0.0)
+[Filter边界] [0.0, 0.340673, 0.672652, 1.0]
 
 ===== 本地推理: Layers 1-3 =====
-本地推理耗时: 0.189s, 输出尺寸: torch.Size([1, 64, 112, 112])
+本地推理耗时: 0.193s, 输出尺寸: torch.Size([1, 64, 112, 112])
 
-[DDPG决策] 分割比例: ['0.839', '0.086', '0.074']
-[Filter边界] [0, 53, 58, 64]
-
-===== AllReduce边缘推理: Layers 4-18 =====
-层分组: [(4, 6), (7, 9), (10, 12), (13, 15), (16, 16), (17, 17), (18, 18)]
-
---- Layer Group 1: Layers 4-6 ---
-当前组 (目标通道数 128) Filter 分割边界: [0, 107, 118, 128]
-[Broadcast] Sent to Node 0: layers 4-6, boundaries [0, 107, 118, 128]
-[Broadcast] Sent to Node 1: layers 4-6, boundaries [0, 107, 118, 128]
-[Broadcast] Sent to Node 2: layers 4-6, boundaries [0, 107, 118, 128]
-[Collect] From Node 0, Layer 6: torch.Size([1, 107, 56, 56])
-[Collect] From Node 1, Layer 6: torch.Size([1, 11, 56, 56])
-[Collect] From Node 2, Layer 6: torch.Size([1, 10, 56, 56])
-合并后尺寸: torch.Size([1, 128, 56, 56])
-[BroadcastMerged] Sent to Node 0: next_layer=7, size=torch.Size([1, 128, 56, 56])
-[BroadcastMerged] Sent to Node 1: next_layer=7, size=torch.Size([1, 128, 56, 56])
-[BroadcastMerged] Sent to Node 2: next_layer=7, size=torch.Size([1, 128, 56, 56])
-
---- Layer Group 2: Layers 7-9 ---
-当前组 (目标通道数 256) Filter 分割边界: [0, 214, 236, 256]
-[Broadcast] Sent to Node 0: layers 7-9, boundaries [0, 214, 236, 256]
-[Broadcast] Sent to Node 1: layers 7-9, boundaries [0, 214, 236, 256]
-[Broadcast] Sent to Node 2: layers 7-9, boundaries [0, 214, 236, 256]
-[Collect] From Node 0, Layer 9: torch.Size([1, 214, 28, 28])
-[Collect] From Node 1, Layer 9: torch.Size([1, 22, 28, 28])
-[Collect] From Node 2, Layer 9: torch.Size([1, 20, 28, 28])
-合并后尺寸: torch.Size([1, 256, 28, 28])
-[BroadcastMerged] Sent to Node 0: next_layer=10, size=torch.Size([1, 256, 28, 28])
-[BroadcastMerged] Sent to Node 1: next_layer=10, size=torch.Size([1, 256, 28, 28])
-[BroadcastMerged] Sent to Node 2: next_layer=10, size=torch.Size([1, 256, 28, 28])
-
---- Layer Group 3: Layers 10-12 ---
-当前组 (目标通道数 512) Filter 分割边界: [0, 429, 473, 512]
-[Broadcast] Sent to Node 0: layers 10-12, boundaries [0, 429, 473, 512]
-[Broadcast] Sent to Node 1: layers 10-12, boundaries [0, 429, 473, 512]
-[Broadcast] Sent to Node 2: layers 10-12, boundaries [0, 429, 473, 512]
-[Collect] From Node 0, Layer 12: torch.Size([1, 429, 14, 14])
-[Collect] From Node 1, Layer 12: torch.Size([1, 44, 14, 14])
-[Collect] From Node 2, Layer 12: torch.Size([1, 39, 14, 14])
-合并后尺寸: torch.Size([1, 512, 14, 14])
-[BroadcastMerged] Sent to Node 0: next_layer=13, size=torch.Size([1, 512, 14, 14])
-[BroadcastMerged] Sent to Node 1: next_layer=13, size=torch.Size([1, 512, 14, 14])
-[BroadcastMerged] Sent to Node 2: next_layer=13, size=torch.Size([1, 512, 14, 14])
-
---- Layer Group 4: Layers 13-15 ---
-当前组 (目标通道数 512) Filter 分割边界: [0, 429, 473, 512]
-[Broadcast] Sent to Node 0: layers 13-15, boundaries [0, 429, 473, 512]
-[Broadcast] Sent to Node 1: layers 13-15, boundaries [0, 429, 473, 512]
-[Broadcast] Sent to Node 2: layers 13-15, boundaries [0, 429, 473, 512]
-[Collect] From Node 0, Layer 15: torch.Size([1, 429, 7, 7])
-[Collect] From Node 1, Layer 15: torch.Size([1, 44, 7, 7])
-[Collect] From Node 2, Layer 15: torch.Size([1, 39, 7, 7])
-合并后尺寸: torch.Size([1, 512, 7, 7])
-[BroadcastMerged] Sent to Node 0: next_layer=16, size=torch.Size([1, 512, 7, 7])
-[BroadcastMerged] Sent to Node 1: next_layer=16, size=torch.Size([1, 512, 7, 7])
-[BroadcastMerged] Sent to Node 2: next_layer=16, size=torch.Size([1, 512, 7, 7])
-
---- Layer Group 5: Layers 16-16 ---
-当前组 (目标通道数 4096) Filter 分割边界: [0, 3438, 3791, 4096]
-[Broadcast] Sent to Node 0: layers 16-16, boundaries [0, 3438, 3791, 4096]
-[Broadcast] Sent to Node 1: layers 16-16, boundaries [0, 3438, 3791, 4096]
-[Broadcast] Sent to Node 2: layers 16-16, boundaries [0, 3438, 3791, 4096]
-[Collect] From Node 0, Layer 16: torch.Size([1, 3438])
-[Collect] From Node 1, Layer 16: torch.Size([1, 353])
-[Collect] From Node 2, Layer 16: torch.Size([1, 305])
-合并后尺寸: torch.Size([1, 4096])
-[BroadcastMerged] Sent to Node 0: next_layer=17, size=torch.Size([1, 4096])
-[BroadcastMerged] Sent to Node 1: next_layer=17, size=torch.Size([1, 4096])
-[BroadcastMerged] Sent to Node 2: next_layer=17, size=torch.Size([1, 4096])
-
---- Layer Group 6: Layers 17-17 ---
-当前组 (目标通道数 4096) Filter 分割边界: [0, 3438, 3791, 4096]
-[Broadcast] Sent to Node 0: layers 17-17, boundaries [0, 3438, 3791, 4096]
-[Broadcast] Sent to Node 1: layers 17-17, boundaries [0, 3438, 3791, 4096]
-[Broadcast] Sent to Node 2: layers 17-17, boundaries [0, 3438, 3791, 4096]
-[Collect] From Node 0, Layer 17: torch.Size([1, 3438])
-[Collect] From Node 1, Layer 17: torch.Size([1, 353])
-[Collect] From Node 2, Layer 17: torch.Size([1, 305])
-合并后尺寸: torch.Size([1, 4096])
-[BroadcastMerged] Sent to Node 0: next_layer=18, size=torch.Size([1, 4096])
-[BroadcastMerged] Sent to Node 1: next_layer=18, size=torch.Size([1, 4096])
-[BroadcastMerged] Sent to Node 2: next_layer=18, size=torch.Size([1, 4096])
-
---- Layer Group 7: Layers 18-18 ---
-当前组 (目标通道数 100) Filter 分割边界: [0, 83, 91, 100]
-[Broadcast] Sent to Node 0: layers 18-18, boundaries [0, 83, 91, 100]
-[Broadcast] Sent to Node 1: layers 18-18, boundaries [0, 83, 91, 100]
-[Broadcast] Sent to Node 2: layers 18-18, boundaries [0, 83, 91, 100]
-[Collect] From Node 0, Layer 18: torch.Size([1, 83])
-[Collect] From Node 1, Layer 18: torch.Size([1, 8])
-[Collect] From Node 2, Layer 18: torch.Size([1, 9])
+===== 边缘协作推理: Layers 4-18 =====
+[广播Plan] {'start_layer': 4, 'end_layer': 18}, 通道边界: [0.0, 0.340673, 0.672652, 1.0]
+[Broadcast] To Node 0: layers 4-18, boundaries [0.0, 0.340673, 0.672652, 1.0]
+[Broadcast] To Node 1: layers 4-18, boundaries [0.0, 0.340673, 0.672652, 1.0]
+[Broadcast] To Node 2: layers 4-18, boundaries [0.0, 0.340673, 0.672652, 1.0]
+[Collect] From Node 0, Layer 18: torch.Size([1, 34])
+[Collect] From Node 1, Layer 18: torch.Size([1, 33])
+[Collect] From Node 2, Layer 18: torch.Size([1, 33])
 合并后尺寸: torch.Size([1, 100])
 
 [完成] 第 5 轮推理
-[统计] 总耗时: 1.258s | 传输耗时: 0.000s
+[统计] 总耗时: 1.265s | 传输耗时: 0.000s
+[DRL更新] 记录执行延迟: 1.265s -> 映射为 Reward: 9.765
 
 ============================================================
 所有轮次完成

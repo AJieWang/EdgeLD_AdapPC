@@ -5,9 +5,9 @@ sys.path.append("../..")
 sys.path.append("..")
 
 from node_test.network_op import Network_init_datanode, Network_init_namenode
-from node_test.network_op import AllReduceNameNode, AllReduceDataNode
+from node_test.network_op import EdgeNNNode, EdgeDataNode
 from node_test.num_set_up import Num_set_up
-from node_test.scheduler import PipelineScheduler, StageBoundary, AllReduceScheduler
+from node_test.scheduler import PipelineScheduler, StageBoundary
 from node_test.ilp_solver import OffloadingPartitioner, calculate_layer_flops_vgg13, calculate_output_size_vgg13
 from node_test.adaptive_partitioner import AdaptivePartitioner
 import torch
@@ -40,12 +40,22 @@ device_power = (6.24e-11, 1.97e-2)
 edge_cluster_power = (3.12e-11, 1.0e-2)
 bandwidth = 100e6
 
-inference_model = VGG_model()
+MODEL_TYPE = 'VGG13'
+INPUT_WIDTH = 224
+
+if MODEL_TYPE == 'VGG16':
+    from VGG.mydefine_VGG16 import VGG_model as VGG_model_class
+else:
+    from VGG.mydefine_VGG13 import VGG_model as VGG_model_class
+
+inference_model = VGG_model_class()
 conv_length = inference_model.get_conv_length()
 total_length = inference_model.get_total_length()
 c_out_list = inference_model.get_c_out()
 maxpool_layer = inference_model.get_maxpool_layer()
-width = 224
+width = INPUT_WIDTH
+
+ddpg_state_dim = 12
 
 transfer_time = []
 thread_start_time = []
@@ -56,11 +66,10 @@ thread_time = []
 class AdapCPNameNode:
     def __init__(self, namenode):
         self.namenode = namenode
-        self.allreduce_namenode = AllReduceNameNode(namenode)
+        self.edge_namenode = EdgeNNNode(namenode)
         self.scheduler = PipelineScheduler(datanode_num, total_length)
-        self.allreduce_scheduler = AllReduceScheduler(datanode_num)
-        self.offloading_partitioner = OffloadingPartitioner() 
-        self.ddpg_partitioner = AdaptivePartitioner(datanode_num, state_dim = 12, use_dirichlet=True)
+        self.offloading_partitioner = OffloadingPartitioner()
+        self.ddpg_partitioner = AdaptivePartitioner(datanode_num, state_dim = ddpg_state_dim, use_dirichlet=True)
         self.current_split_layer = None
         self.current_ratios = None
         self.current_boundaries = None
@@ -156,22 +165,21 @@ class AdapCPNameNode:
         )
         return self.current_ratios
 
-    def compute_filter_boundaries(self, c_out):
-        """根据DDPG比例计算Filter分割边界（3节点 → 4个边界）"""
+    def compute_filter_boundaries(self):
+        """根据DDPG比例计算Filter分割边界（3节点 → 4个边界）
+        返回比例 boundaries [0, r0, r0+r1, r0+r1+r2, 1.0]
+        子节点根据比例 * 各层 c_out 来计算实际输出通道数
+        """
         if self.current_ratios is None:
             raise ValueError("DDPG ratios not computed")
 
-        min_ratio = 1.0 / c_out
-        adjusted_ratios = np.maximum(self.current_ratios, min_ratio)
-        adjusted_ratios = adjusted_ratios / adjusted_ratios.sum() 
-
-        boundaries = [0]
+        cumulative = 0.0
+        boundaries = [0.0]
         for r in self.current_ratios:
-            next_bound = int(boundaries[-1] + c_out * r)
-            boundaries.append(next_bound)
-        
-        boundaries[-1] = c_out
-        
+            cumulative += r
+            boundaries.append(round(cumulative, 6))
+        boundaries[-1] = 1.0
+
         self.current_boundaries = boundaries
         return boundaries
 
@@ -200,58 +208,44 @@ class AdapCPNameNode:
         print(f"本地推理耗时: {end_time - start_time:.3f}s, 输出尺寸: {output.size()}")
         return output
 
-    def run_allreduce_inference(self, input_tensor):
+    def run_edge_inference(self, input_tensor):
+        """
+        边缘协作推理: 广播plan给子节点，收集部分通道输出，合并
+        """
         edge_start, edge_end = self.get_edge_layers()
         if edge_start > edge_end:
             return input_tensor
 
-        print(f"\n===== AllReduce边缘推理: Layers {edge_start}-{edge_end} =====")
+        print(f"\n===== 边缘协作推理: Layers {edge_start}-{edge_end} =====")
 
-        current_input = input_tensor
-        layer_groups = self._get_layer_groups(edge_start, edge_end)
+        plan = {'start_layer': edge_start, 'end_layer': edge_end}
+        boundaries = self.current_boundaries
 
-        print(f"层分组: {layer_groups}")
+        print(f"[广播Plan] {plan}, 通道边界: {boundaries}")
 
-        for group_idx, (start_l, end_l) in enumerate(layer_groups):
-            print(f"\n--- Layer Group {group_idx + 1}: Layers {start_l}-{end_l} ---")
+        self.edge_namenode.broadcast_plan_to_all(plan, boundaries, input_tensor, c_out_list)
 
-            current_group_c_out = c_out_list[start_l - 1]
-            
-            boundaries = self.compute_filter_boundaries(current_group_c_out)
-            print(f"当前组 (目标通道数 {current_group_c_out}) Filter 分割边界: {boundaries}")
-
-            self.allreduce_namenode.broadcast_input_to_all(
-                current_input, start_l, end_l, boundaries
+        slices = {}
+        for _ in range(datanode_num):
+            layer_id, node_id, tensor_slice = self.edge_namenode.collect_slice_from_datanode(
+                _, transfer_time
             )
+            slices[node_id] = tensor_slice
 
-            slices = {}
-            for _ in range(datanode_num):
-                layer_id, node_id, tensor_slice = self.allreduce_namenode.collect_slice_from_datanode(
-                    _, transfer_time
-                )
-                slices[node_id] = tensor_slice
+        sorted_slices = []
+        for i in range(datanode_num):
+            t = slices[i]
+            if t.size(1) > 0:
+                sorted_slices.append(t)
 
-            sorted_slices = []
-            for i in range(datanode_num):
-                t = slices[i]
-                if t.size(1) > 0:  
-                    sorted_slices.append(t)
-            
-            if len(sorted_slices) > 0:
-                merged = torch.cat(sorted_slices, dim=1)
-            else:
-                merged = torch.zeros(1, 0, 1, 1)
+        if len(sorted_slices) > 0:
+            merged = torch.cat(sorted_slices, dim=1)
+        else:
+            merged = torch.zeros(1, 0, 1, 1)
 
-            print(f"合并后尺寸: {merged.size()}")
+        print(f"合并后尺寸: {merged.size()}")
 
-            next_layer_id = layer_groups[group_idx + 1][0] if group_idx + 1 < len(layer_groups) else 0
-
-            if next_layer_id != 0:
-                self.allreduce_namenode.broadcast_merged_to_all(merged, next_layer_id)
-
-            current_input = merged
-
-        return current_input
+        return merged
 
     def _get_layer_groups(self, start_layer, end_layer):
         groups = []
@@ -297,7 +291,7 @@ def run_adapcp_inference(namenode, adapcp_namenode, round_idx):
     global transfer_time, thread_start_time, thread_end_time, thread_time
 
     print(f"\n{'='*60}")
-    print(f"第 {round_idx} 轮 AdapCP 推理 (AllReduce Filter Splitting)")
+    print(f"第 {round_idx} 轮 AdapCP 边缘协作推理")
     print(f"{'='*60}")
 
     transfer_time = []
@@ -325,12 +319,11 @@ def run_adapcp_inference(namenode, adapcp_namenode, round_idx):
     )
     print(f"\n[DDPG决策] 分割比例: {[f'{r:.3f}' for r in ratios]} (Epsilon: {epsilon_val})")
 
-    c_out_for_boundaries = c_out_list[adapcp_namenode.current_split_layer - 1] if adapcp_namenode.current_split_layer > 0 else 64
-    boundaries = adapcp_namenode.compute_filter_boundaries(c_out_for_boundaries)
+    boundaries = adapcp_namenode.compute_filter_boundaries()
     print(f"[Filter边界] {boundaries}")
 
     local_output = adapcp_namenode.run_local_inference(input_tensor)
-    edge_output = adapcp_namenode.run_allreduce_inference(local_output)
+    edge_output = adapcp_namenode.run_edge_inference(local_output)
 
     final_output = edge_output if edge_output is not None else local_output
 
