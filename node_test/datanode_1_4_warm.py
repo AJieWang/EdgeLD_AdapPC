@@ -3,38 +3,20 @@ import sys
 sys.path.append("../..")
 sys.path.append("..")
 
-from node_test.network_op import Network_init_datanode, Network_init_namenode
-from node_test.network_op import EdgeDataNode
-from node_test.num_set_up import Num_set_up
-from VGG.mydefine_VGG13 import VGG_model
+from node_test.network_op import Network_init_datanode, Network_init_namenode, datanode_ip
+from node_test.network_op import EdgeDataNode, EdgeP2PCommunicator
+from node_test.num_set_up import Num_set_up, MODEL_TYPE, INPUT_WIDTH
+from node_test.num_set_up import pool_layers_set, conv_layers, c_out_list, conv_length, total_length, inference_model
 from VGG.tensor_op import SlicedVGGExecutor
-from VGG.tensor_op import VGG13_POOL_LAYERS, VGG13_CONV_LAYERS
 import torch.nn as nn
 import torch, time
 import threading
 import queue
 
-from node_test.network_op import Network_init_datanode, Network_init_namenode, datanode_ip
-from node_test.network_op import EdgeDataNode, EdgeP2PCommunicator
-
-MODEL_TYPE = 'VGG13'
-INPUT_WIDTH = 224
-
-if MODEL_TYPE == 'VGG16':
-    from VGG.mydefine_VGG16 import VGG_model as VGG_model_class
-else:
-    from VGG.mydefine_VGG13 import VGG_model as VGG_model_class
-
 num_set_up = Num_set_up()
 namenode_num = num_set_up.get_namenode_num()
 datanode_num = num_set_up.get_datanode_num()
 datanode_name = 1
-
-inference_model = VGG_model_class()
-maxpool_layer = inference_model.get_maxpool_layer()
-conv_length = inference_model.get_conv_length()
-total_length = inference_model.get_total_length()
-c_out_list = inference_model.get_c_out()
 
 WARM_UP_ROUNDS = 3
 VALID_ROUNDS = 2
@@ -104,23 +86,22 @@ TOTAL_ROUNDS = WARM_UP_ROUNDS + VALID_ROUNDS
 class EdgeDataNodeExecutor:
     def __init__(self, full_model, p2p_communicator=None):
         self.model = full_model
-        self.executor = SlicedVGGExecutor(full_model, model_type='VGG13')
-        self.p2p_communicator = p2p_communicator  # 引入边边通信器
+        self.executor = SlicedVGGExecutor(full_model, model_type=MODEL_TYPE)
+        self.p2p_communicator = p2p_communicator
+        self.pool_layers_set = set(pool_layers_set)
+        self.conv_layers_set = set(conv_layers)
 
     def execute_layers_with_output_slice(self, input_tensor, start_layer, end_layer, boundaries, c_out_list):
         current = input_tensor
-        pool_layers = VGG13_POOL_LAYERS
-        conv_layers = VGG13_CONV_LAYERS
-
         node_start_ratio = boundaries[datanode_name]
         node_end_ratio = boundaries[datanode_name + 1]
 
         for layer_id in range(start_layer, end_layer + 1):
-            if layer_id in pool_layers:
+            if layer_id in self.pool_layers_set:
                 current = torch.nn.functional.max_pool2d(current, kernel_size=2, stride=2)
                 print(f"  Layer {layer_id}: MaxPool2d, output {current.size()}")
 
-            elif layer_id in conv_layers:
+            elif layer_id in self.conv_layers_set:
                 c_out = c_out_list[layer_id - 1]
                 start_filter = int(c_out * node_start_ratio)
                 end_filter = int(c_out * node_end_ratio)
@@ -140,7 +121,7 @@ class EdgeDataNodeExecutor:
                 start_neuron = int(c_out * node_start_ratio)
                 end_neuron = int(c_out * node_end_ratio)
 
-                if layer_id == 16 and current.dim() > 2:
+                if (layer_id == 16 or layer_id == 19) and current.dim() > 2:
                     current = torch.nn.functional.adaptive_avg_pool2d(current, (7, 7))
                     current = torch.flatten(current, 1)
 

@@ -1,25 +1,26 @@
 import sys
-import math # 新增 math 导入
+import math
 
 sys.path.append("../..")
 sys.path.append("..")
 
 from node_test.network_op import Network_init_datanode, Network_init_namenode
 from node_test.network_op import EdgeNNNode, EdgeDataNode
-from node_test.num_set_up import Num_set_up
+from node_test.num_set_up import Num_set_up, sample_tenosr, MODEL_TYPE, INPUT_WIDTH, pool_layers_set, conv_layers
+from node_test.num_set_up import c_out_list, conv_length, total_length, maxpool_layer, inference_model
 from node_test.scheduler import PipelineScheduler, StageBoundary
-from node_test.ilp_solver import OffloadingPartitioner, calculate_layer_flops_vgg13, calculate_output_size_vgg13
+from node_test.ilp_solver import OffloadingPartitioner
+from node_test.ilp_solver import calculate_layer_flops_vgg13, calculate_layer_flops_vgg16
+from node_test.ilp_solver import calculate_output_size_vgg13, calculate_output_size_vgg16
 from node_test.adaptive_partitioner import AdaptivePartitioner
 import torch
 import threading
 import time
 import numpy as np
 import torch.nn as nn
-from VGG.mydefine_VGG13 import VGG_model
 from VGG.tensor_op import tensor_divide_by_computing_network_and_fill
 from VGG.tensor_op import merge_total_tensor, merge_filter_tensor
 from VGG.tensor_op import dispatch_featuremap_to_nodes, tensor_divide_by_filter_ratios
-from VGG.tensor_op import VGG13_POOL_LAYERS, VGG13_CONV_LAYERS
 from network_and_computing.network_and_computing_record import Network_And_Computing
 
 WARM_UP_ROUNDS = 3
@@ -40,22 +41,8 @@ device_power = (6.24e-11, 1.97e-2)
 edge_cluster_power = (3.12e-11, 1.0e-2)
 bandwidth = 100e6
 
-MODEL_TYPE = 'VGG13'
-INPUT_WIDTH = 224
-
-if MODEL_TYPE == 'VGG16':
-    from VGG.mydefine_VGG16 import VGG_model as VGG_model_class
-else:
-    from VGG.mydefine_VGG13 import VGG_model as VGG_model_class
-
-inference_model = VGG_model_class()
-conv_length = inference_model.get_conv_length()
-total_length = inference_model.get_total_length()
-c_out_list = inference_model.get_c_out()
-maxpool_layer = inference_model.get_maxpool_layer()
 width = INPUT_WIDTH
-
-ddpg_state_dim = 12
+ddpg_state_dim = datanode_num * 4  # comp(a,b) + bw + load
 
 transfer_time = []
 thread_start_time = []
@@ -107,45 +94,44 @@ class AdapCPNameNode:
     #         )
 
     def _init_offloading_partitioner(self):
-        """初始化OffloadingPartitioner，添加VGG13各层信息（现已包含全连接层）"""
-        maxpool_layers = [3, 6, 9, 12, 15]
-        
-        # 获取模型的实际总层数 (VGG13通常为18: 15个特征提取层 + 3个FC层)
-        # 如果 self.total_length 没有在这里定义，可直接用 range(1, 19)
-        total_layers_to_profile = total_length if total_length > 0 else 18 
+        """初始化OffloadingPartitioner，添加VGG各层信息"""
+        maxpool_layers_set = set(maxpool_layer)
+        total_layers_to_profile = total_length if total_length > 0 else 18
 
         for layer_id in range(1, total_layers_to_profile + 1):
-            is_maxpool = layer_id in maxpool_layers
-            is_fc = layer_id > 15  # 大于15的认为是全连接层
-            
-            flops = calculate_layer_flops_vgg13(layer_id)
-            output_size = calculate_output_size_vgg13(layer_id)
+            is_maxpool = layer_id in maxpool_layers_set
+            is_fc = layer_id > 15
 
-            # 确定通道数和特征图大小
+            if MODEL_TYPE == 'VGG16':
+                flops = calculate_layer_flops_vgg16(layer_id, input_width=INPUT_WIDTH)
+                output_size = calculate_output_size_vgg16(layer_id, input_width=INPUT_WIDTH)
+            else:
+                flops = calculate_layer_flops_vgg13(layer_id, input_width=INPUT_WIDTH)
+                output_size = calculate_output_size_vgg13(layer_id, input_width=INPUT_WIDTH)
+
             if layer_id <= 3:
                 c_in, c_out = 3, 64
-                h, w = 224, 224
+                h, w = INPUT_WIDTH, INPUT_WIDTH
             elif layer_id <= 6:
                 c_in, c_out = 64, 128
-                h, w = 112, 112
+                h, w = INPUT_WIDTH // 2, INPUT_WIDTH // 2
             elif layer_id <= 9:
                 c_in, c_out = 128, 256
-                h, w = 56, 56
+                h, w = INPUT_WIDTH // 4, INPUT_WIDTH // 4
             elif layer_id <= 12:
                 c_in, c_out = 256, 512
-                h, w = 28, 28
+                h, w = INPUT_WIDTH // 8, INPUT_WIDTH // 8
             elif layer_id <= 15:
                 c_in, c_out = 512, 512
-                h, w = 14, 14
+                h, w = INPUT_WIDTH // 16, INPUT_WIDTH // 16
             else:
-                # 全连接层特征映射
                 if layer_id == 16:
                     c_in, c_out = 512 * 7 * 7, 4096
                 elif layer_id == 17:
                     c_in, c_out = 4096, 4096
                 else:
                     c_in, c_out = 4096, 1000
-                h, w = 1, 1 # FC层不具备二维空间属性，设为1
+                h, w = 1, 1
 
             self.offloading_partitioner.add_layer(
                 layer_id, flops, output_size, is_maxpool, is_fc, c_in, c_out, h, w
@@ -249,11 +235,11 @@ class AdapCPNameNode:
 
     def _get_layer_groups(self, start_layer, end_layer):
         groups = []
-        pool_layers = VGG13_POOL_LAYERS
+        pool_layers_set = set(pool_layers_set)
 
         current_start = start_layer
         for layer_id in range(start_layer, end_layer + 1):
-            if (layer_id in pool_layers or layer_id > 15) and layer_id < end_layer:
+            if (layer_id in pool_layers_set or layer_id > 15) and layer_id < end_layer:
                 groups.append((current_start, layer_id))
                 current_start = layer_id + 1
 
@@ -299,7 +285,7 @@ def run_adapcp_inference(namenode, adapcp_namenode, round_idx):
     thread_end_time = [0] * datanode_num
     thread_time = [[] for _ in range(datanode_num)]
 
-    input_tensor = torch.rand(1, 3, width, width)
+    input_tensor = sample_tenosr
     round_start_time = time.time()
 
     split_layer = adapcp_namenode.compute_offloading_point()

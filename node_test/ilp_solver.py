@@ -285,62 +285,56 @@ class ILPLayerPartitioner:
 #         return flops_map[layer_id]
 #     return 0
 
-def calculate_layer_flops_vgg13(layer_id, c_out_list=None):
+def calculate_layer_flops_vgg13(layer_id, c_out_list=None, input_width=224):
     flops_map = {}
 
-    # 1-15层：卷积层和池化层的FLOPs计算
     for lid in range(1, 16):
         if lid <= 3:
             c_in, c_out = 3, 64
-            h, w = 224, 224
+            h, w = input_width, input_width
         elif lid <= 6:
             c_in, c_out = 64, 128
-            h, w = 112, 112
+            h, w = input_width // 2, input_width // 2
         elif lid <= 9:
             c_in, c_out = 128, 256
-            h, w = 56, 56
+            h, w = input_width // 4, input_width // 4
         elif lid <= 12:
             c_in, c_out = 256, 512
-            h, w = 28, 28
+            h, w = input_width // 8, input_width // 8
         elif lid <= 15:
             c_in, c_out = 512, 512
-            h, w = 14, 14
+            h, w = input_width // 16, input_width // 16
 
-        # 卷积层 FLOPs
         flops = 2 * h * w * c_in * c_out * 3 * 3
         flops_map[lid] = flops
 
-    # 新增 16-18层：全连接层的 FLOPs
-    # FC1 (Layer 16): 经过Flatten后输入为 512*7*7=25088，输出为 4096
     flops_map[16] = 2 * (512 * 7 * 7) * 4096
-    # FC2 (Layer 17): 输入 4096，输出 4096
     flops_map[17] = 2 * 4096 * 4096
-    # FC3 (Layer 18): 输入 4096，输出 1000 (假设为ImageNet分类)
     flops_map[18] = 2 * 4096 * 1000
 
     if layer_id in flops_map:
         return flops_map[layer_id]
     return 0
 
-def calculate_layer_flops_vgg16(layer_id, c_out_list=None):
+def calculate_layer_flops_vgg16(layer_id, c_out_list=None, input_width=224):
     flops_map = {}
 
     for lid in range(1, 19):
         if lid <= 3:
             c_in, c_out = 3, 64
-            h, w = 224, 224
+            h, w = input_width, input_width
         elif lid <= 6:
             c_in, c_out = 64, 128
-            h, w = 112, 112
+            h, w = input_width // 2, input_width // 2
         elif lid <= 10:
             c_in, c_out = 128, 256
-            h, w = 56, 56
+            h, w = input_width // 4, input_width // 4
         elif lid <= 14:
             c_in, c_out = 256, 512
-            h, w = 28, 28
+            h, w = input_width // 8, input_width // 8
         elif lid <= 18:
             c_in, c_out = 512, 512
-            h, w = 14, 14
+            h, w = input_width // 16, input_width // 16
 
         flops = 2 * h * w * c_in * c_out * 3 * 3
         flops_map[lid] = flops
@@ -370,52 +364,54 @@ def calculate_layer_flops_vgg16(layer_id, c_out_list=None):
 #     }
 #     return size_map.get(layer_id, 512 * 7 * 7)
 
-def calculate_output_size_vgg13(layer_id):
-    size_map = {
-        1: 64 * 224 * 224,
-        2: 64 * 224 * 224,
-        3: 64 * 112 * 112,
-        4: 128 * 112 * 112,
-        5: 128 * 112 * 112,
-        6: 128 * 56 * 56,
-        7: 256 * 56 * 56,
-        8: 256 * 56 * 56,
-        9: 256 * 56 * 56,
-        10: 256 * 28 * 28,
-        11: 512 * 28 * 28,
-        12: 512 * 28 * 28,
-        13: 512 * 28 * 28,
-        14: 512 * 14 * 14,
-        15: 512 * 14 * 14,
-        # 新增全连接层的数据输出量 (Float32类型通常还要乘以4，但这里按照原代码逻辑保持单位一致)
-        16: 4096,
-        17: 4096,
-        18: 1000
-    }
-    return size_map.get(layer_id, 1000) # 默认返回最终输出维度
+def calculate_output_size_vgg13(layer_id, input_width=224):
+    maxpool_layers = [3, 6, 9, 12, 15]
+    c_out_list = [64, 64, 64, 128, 128, 128, 256, 256, 256, 512, 512, 512, 512, 512, 512, 4096, 4096, 1000]
 
-def calculate_output_size_vgg16(layer_id):
-    size_map = {
-        1: 64 * 224 * 224,
-        2: 64 * 224 * 224,
-        3: 64 * 112 * 112,
-        4: 128 * 112 * 112,
-        5: 128 * 112 * 112,
-        6: 128 * 56 * 56,
-        7: 256 * 56 * 56,
-        8: 256 * 56 * 56,
-        9: 256 * 56 * 56,
-        10: 256 * 28 * 28,
-        11: 512 * 28 * 28,
-        12: 512 * 28 * 28,
-        13: 512 * 28 * 28,
-        14: 512 * 14 * 14,
-        15: 512 * 14 * 14,
-        16: 512 * 14 * 14,
-        17: 512 * 14 * 14,
-        18: 512 * 7 * 7,
-    }
-    return size_map.get(layer_id, 512 * 7 * 7)
+    width = input_width
+    c_out = c_out_list[layer_id - 1] if layer_id <= 18 else 1000
+
+    if layer_id <= 3:
+        h, w = width, width
+    elif layer_id <= 6:
+        h, w = width // 2, width // 2
+    elif layer_id <= 9:
+        h, w = width // 4, width // 4
+    elif layer_id <= 12:
+        h, w = width // 8, width // 8
+    elif layer_id <= 15:
+        h, w = width // 16, width // 16
+    elif layer_id == 16:
+        h, w = 1, 1
+    elif layer_id == 17:
+        h, w = 1, 1
+    else:
+        h, w = 1, 1
+
+    return c_out * h * w
+
+
+def calculate_output_size_vgg16(layer_id, input_width=224):
+    maxpool_layers = [3, 6, 10, 14, 18]
+    c_out_list = [64, 64, 64, 128, 128, 128, 256, 256, 256, 256, 512, 512, 512, 512, 512, 512, 512, 512]
+
+    width = input_width
+    c_out = c_out_list[layer_id - 1] if layer_id <= 18 else 1000
+
+    if layer_id <= 3:
+        h, w = width, width
+    elif layer_id <= 6:
+        h, w = width // 2, width // 2
+    elif layer_id <= 10:
+        h, w = width // 4, width // 4
+    elif layer_id <= 14:
+        h, w = width // 8, width // 8
+    elif layer_id <= 18:
+        h, w = width // 16, width // 16
+    else:
+        h, w = 1, 1
+
+    return c_out * h * w
 
 
 if __name__ == "__main__":
