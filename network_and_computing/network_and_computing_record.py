@@ -7,7 +7,8 @@ class Network_And_Computing():
     def __init__(self):
         # 算力单位描述为 s/FLOPs
         self.computing_power = []
-        self.computing_a = [6.24e-11, 6.24e-11, 6.24e-11, 6.24e-11, 3.24e-11, 6.24e-11, 6.24e-11]
+        # self.computing_a = [6.24e-11, 6.24e-11, 6.24e-11, 6.24e-11, 3.24e-11, 6.24e-11, 6.24e-11]
+        self.computing_a = [3.37e-11, 3.37e-11, 3.37e-11, 3.37e-11, 3.37e-11, 3.37e-11, 3.37e-11]
         self.computing_b = [1.97e-2, 1.97e-2, 1.97e-2, 1.97e-2, 1.97e-2, 1.97e-2, 1.97e-2]
         for i in self.computing_a:
             # 倒数

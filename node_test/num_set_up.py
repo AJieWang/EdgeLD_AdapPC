@@ -1,10 +1,14 @@
 import torch
 
 # ========== 全局配置（在此处修改）==========
-MODEL_TYPE = 'VGG16'      # 'VGG13' 或 'VGG16'
+MODEL_TYPE = 'VGG13'      # 'VGG13' 或 'VGG16'
 data_frame = 1
 INPUT_WIDTH = 224         # 96, 224, 448
-datanode_num_temp = 3     # 1, 2, 3
+datanode_num_temp = 2     # 1, 2, 3
+
+device_power = (6.24e-11, 1.97e-2)
+edge_cluster_power = (6.24e-11, 1.97e-2)
+bandwidth = 100e6
 
 sample_tenosr = torch.randn(data_frame, 3, INPUT_WIDTH, INPUT_WIDTH)
 

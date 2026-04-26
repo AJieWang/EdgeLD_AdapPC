@@ -6,7 +6,7 @@ sys.path.append("..")
 
 from node_test.network_op import Network_init_datanode, Network_init_namenode
 from node_test.network_op import EdgeNNNode, EdgeDataNode
-from node_test.num_set_up import Num_set_up, sample_tenosr, MODEL_TYPE, INPUT_WIDTH, pool_layers_set, conv_layers
+from node_test.num_set_up import Num_set_up, sample_tenosr, device_power, edge_cluster_power, bandwidth, MODEL_TYPE, INPUT_WIDTH, pool_layers_set, conv_layers
 from node_test.num_set_up import c_out_list, conv_length, total_length, maxpool_layer, inference_model
 from node_test.scheduler import PipelineScheduler, StageBoundary
 from node_test.ilp_solver import OffloadingPartitioner
@@ -37,10 +37,6 @@ network_state = network_and_computing.get_network_state(datanode_num)
 computing_a = network_and_computing.get_computing_a(datanode_num)
 computing_b = network_and_computing.get_computing_b(datanode_num)
 
-device_power = (6.24e-11, 1.97e-2)
-edge_cluster_power = (3.12e-11, 1.0e-2)
-bandwidth = 100e6
-
 width = INPUT_WIDTH
 ddpg_state_dim = datanode_num * 4  # comp(a,b) + bw + load
 
@@ -48,7 +44,6 @@ transfer_time = []
 thread_start_time = []
 thread_end_time = []
 thread_time = []
-
 
 class AdapCPNameNode:
     def __init__(self, namenode):
