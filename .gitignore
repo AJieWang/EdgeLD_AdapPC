@@ -1,9 +1,6 @@
 # 忽略“实验介绍”目录
 实验介绍/
 
-# 忽略 README.md 文件
-README.md
-
 # 忽略所有 PDF 文件
 *.pdf
 
